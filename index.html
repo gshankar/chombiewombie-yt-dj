@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ChombieWombie YT DJ</title>
+    <meta name="description" content="Convert Rekordbox .cue files to YouTube timestamped chapter marks instantly and analyze your DJ mix.">
+    <link rel="stylesheet" href="style.css">
+    <!-- Lucide Icons & Wavesurfer & MIDIWriter -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://unpkg.com/wavesurfer.js@7"></script>
+    <script src="https://cdn.jsdelivr.net/npm/midi-writer-js/browser/midiwriter.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Fira+Code&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="glow-orb"></div>
+    
+    <main class="container">
+        <div class="card">
+            <header>
+                <h1>ChombieWombie YT DJ</h1>
+                <p class="subtitle">Convert .cue files & Analyze DJ Mixes</p>
+            </header>
+
+            <div class="tabs">
+                <button class="tab-btn" data-tab="cue">CUE Converter</button>
+                <button class="tab-btn active" data-tab="analysis">Mix Lab</button>
+                <button class="tab-btn" data-tab="visual">Visual Sync</button>
+                <button class="tab-btn" data-tab="midi">MIDI Sync</button>
+            </div>
+
+            <div id="cue-tab" class="tab-content">
+                <div id="drop-zone" class="drop-zone">
+                    <i data-lucide="file-text"></i>
+                    <p>Drop your .cue file here</p>
+                    <span>or click to browse</span>
+                    <input type="file" id="file-input" accept=".cue">
+                </div>
+            </div>
+
+            <div id="analysis-tab" class="tab-content active">
+                <div id="audio-drop-zone" class="drop-zone">
+                    <i data-lucide="music"></i>
+                    <p>Drop your DJ Mix (WAV/MP3)</p>
+                    <span>Analyze transitions automatically</span>
+                    <input type="file" id="audio-input" accept="audio/*">
+                </div>
+
+                <div id="linked-cue-zone" class="drop-zone" style="margin-top: 1rem; padding: 1.5rem; border-style: dotted; display: none;">
+                    <i data-lucide="link" style="font-size: 1.5rem; margin-bottom: 0.5rem;"></i>
+                    <p style="font-size: 0.9rem;">(Optional) Drop .cue file to sync metadata</p>
+                    <input type="file" id="linked-cue-input" accept=".cue">
+                </div>
+                
+                <div id="waveform-container" style="display: none;">
+                    <div id="decoding-spinner" class="spinner-container">
+                        <div class="spinner"></div>
+                        <p>Decoding audio for waveform...</p>
+                    </div>
+                    <div id="waveform-spinner" class="spinner-container" style="display: none;">
+                        <div class="spinner"></div>
+                        <p>Analyzing audio frequencies...</p>
+                    </div>
+                    <div id="waveform"></div>
+                    <div class="waveform-controls">
+                        <button id="play-btn" class="btn btn-secondary">
+                            <i data-lucide="play"></i> Play
+                        </button>
+                        <button id="analyze-btn" class="btn">
+                            <i data-lucide="sparkles"></i> Detect Transitions
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="visual-tab" class="tab-content">
+                <div class="visual-info" style="display: flex; justify-content: space-between; align-items: flex-start;">
+                    <div>
+                        <h3>Visual Scene Guide</h3>
+                        <p class="subtitle" style="text-align: left; margin-bottom: 1.5rem;">Sync your video edits to the detected transitions.</p>
+                    </div>
+                    <button id="vs2-download-btn" class="btn" style="display: none;">
+                        <i data-lucide="download"></i>
+                        VS2 Playlist
+                    </button>
+                </div>
+                <div id="visual-output" class="output-box" style="font-family: inherit;">
+                    <div style="text-align: center; color: var(--text-dim); padding: 2rem;">
+                        <i data-lucide="info" style="margin-bottom: 1rem;"></i>
+                        <p>Analyze a mix in the Mix Lab first to generate visual sync data.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div id="midi-tab" class="tab-content">
+                <div class="visual-info" style="display: flex; justify-content: space-between; align-items: flex-start;">
+                    <div>
+                        <h3>MIDI Rhythm Extraction</h3>
+                        <p class="subtitle" style="text-align: left; margin-bottom: 1.5rem;">Extract MIDI notes from frequency bands (Bass, Mid, Treble).</p>
+                    </div>
+                    <button id="midi-download-btn" class="btn" style="display: none;">
+                        <i data-lucide="music"></i>
+                        Download MIDI
+                    </button>
+                </div>
+                <div id="midi-output" class="output-box" style="font-family: inherit;">
+                    <div class="midi-legend">
+                        <div class="legend-item"><span class="intensity-badge intensity-aggressive">C1 (36)</span> Bass / Kick</div>
+                        <div class="legend-item"><span class="intensity-badge intensity-happy">D1 (38)</span> Mids / Snare</div>
+                        <div class="legend-item"><span class="intensity-badge intensity-chill">F#1 (42)</span> Treble / Hats</div>
+                    </div>
+                    <div id="midi-status" style="text-align: center; color: var(--text-dim); padding: 1rem;">
+                        Analyze a mix in the Mix Lab to extract MIDI data.
+                    </div>
+                    <div id="midi-debug-log" style="font-family: 'Fira Code', monospace; font-size: 0.75rem; color: #10b981; margin-top: 1rem; padding: 0.5rem; background: rgba(0,0,0,0.2); border-radius: 4px; display: none;">
+                    </div>
+                </div>
+            </div>
+
+            <div id="results" class="results-container">
+                <div class="result-header">
+                    <h3>YouTube Chapters</h3>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <button id="copy-btn" class="btn">
+                            <i data-lucide="copy"></i>
+                            Copy
+                        </button>
+                        <button id="reset-btn" class="btn btn-secondary">
+                            <i data-lucide="rotate-ccw"></i>
+                            Clear
+                        </button>
+                    </div>
+                </div>
+                <div id="output" class="output-box"></div>
+            </div>
+        </div>
+    </main>
+
+    <script src="script.js"></script>
+    <script>
+        // Initialize icons
+        lucide.createIcons();
+    </script>
+</body>
+</html>
