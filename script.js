@@ -1,202 +1,542 @@
-// Tab Switching
-const tabBtns = document.querySelectorAll('.tab-btn');
-const tabContents = document.querySelectorAll('.tab-content');
+/**
+ * ChombieWombie Tracklist Studio
+ * A manual post-production suite for DJs
+ */
 
-tabBtns.forEach(btn => {
-    btn.addEventListener('click', () => {
-        const tabId = btn.getAttribute('data-tab');
-        tabBtns.forEach(b => b.classList.remove('active'));
-        tabContents.forEach(c => c.classList.remove('active'));
-        btn.classList.add('active');
-        document.getElementById(`${tabId}-tab`).classList.add('active');
-    });
-});
+// --- Global State ---
+let tracklist = [];
+let audioBuffer = null;
+let mixFileName = 'my_mix';
+let isProcessing = false;
+let currentPreviewTab = 'yt';
+const TEST_MODE = true; // Set to false to disable auto-loading test files
 
-// Wavesurfer Initialization
-let wavesurfer = WaveSurfer.create({
-    container: '#waveform',
-    waveColor: '#94a3b8',
-    progressColor: '#7c3aed',
-    cursorColor: '#ec4899',
-    barWidth: 2,
-    barRadius: 3,
-    responsive: true,
-    height: 120,
-});
+// --- DOM Elements ---
+const tracklistBody = document.getElementById('tracklist-body');
+const waveformSection = document.getElementById('waveform-section');
+const setupView = document.getElementById('setup-view');
+const studioView = document.getElementById('studio-view');
+const loadingOverlay = document.getElementById('loading-overlay');
+const loadingText = document.getElementById('loading-text');
 
-const audioInput = document.getElementById('audio-input');
-const audioDropZone = document.getElementById('audio-drop-zone');
-const waveformContainer = document.getElementById('waveform-container');
 const playBtn = document.getElementById('play-btn');
-const analyzeBtn = document.getElementById('analyze-btn');
+const stopBtn = document.getElementById('stop-btn');
+const tagBtn = document.getElementById('tag-btn');
+const currentTimeDisplay = document.getElementById('current-time');
+const dropOverlay = document.getElementById('drop-overlay');
 
-audioDropZone.addEventListener('click', () => audioInput.click());
-audioInput.addEventListener('change', (e) => {
-    const file = e.target.files[0];
-    if (file) loadAudio(file);
-});
-
-audioDropZone.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    audioDropZone.classList.add('drag-over');
-});
-
-audioDropZone.addEventListener('dragleave', () => audioDropZone.classList.remove('drag-over'));
-
-audioDropZone.addEventListener('drop', (e) => {
-    e.preventDefault();
-    audioDropZone.classList.remove('drag-over');
-    const file = e.dataTransfer.files[0];
-    if (file && file.type.startsWith('audio/')) {
-        loadAudio(file);
-    }
-});
-
-playBtn.addEventListener('click', () => {
-    wavesurfer.playPause();
-    const isPlaying = wavesurfer.isPlaying();
-    playBtn.innerHTML = isPlaying ? '<i data-lucide="pause"></i> Pause' : '<i data-lucide="play"></i> Play';
-    lucide.createIcons();
-});
-
-const linkedCueInput = document.getElementById('linked-cue-input');
-const linkedCueZone = document.getElementById('linked-cue-zone');
-let linkedCueData = null;
-
-linkedCueZone.addEventListener('click', () => linkedCueInput.click());
-linkedCueInput.addEventListener('change', async (e) => {
-    const file = e.target.files[0];
-    if (file) handleLinkedCue(file);
-});
-
-linkedCueZone.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    linkedCueZone.classList.add('drag-over');
-});
-
-linkedCueZone.addEventListener('dragleave', () => {
-    linkedCueZone.classList.remove('drag-over');
-});
-
-linkedCueZone.addEventListener('drop', (e) => {
-    e.preventDefault();
-    linkedCueZone.classList.remove('drag-over');
-    const file = e.dataTransfer.files[0];
-    if (file && file.name.endsWith('.cue')) {
-        handleLinkedCue(file);
-    }
-});
-
-async function handleLinkedCue(file) {
-    const text = await file.text();
-    linkedCueData = parseCueToObjects(text);
-    linkedCueZone.innerHTML = `
-        <div style="color: #10b981; display: flex; align-items: center; gap: 0.5rem; justify-content: center;">
-            <i data-lucide="check-circle"></i>
-            <span>${file.name} synced</span>
-        </div>
-    `;
-    lucide.createIcons();
+// --- Helpers ---
+function showLoading(text = "Processing...") {
+    loadingText.textContent = text;
+    loadingOverlay.style.display = 'flex';
 }
 
-let mixFileName = 'dj-mix';
+function hideLoading() {
+    loadingOverlay.style.display = 'none';
+}
 
-const decodingSpinner = document.getElementById('decoding-spinner');
+function checkViewState() {
+    // Show studio if either audio or tracklist exists
+    if (audioBuffer || tracklist.length > 0) {
+        setupView.style.display = 'none';
+        studioView.style.display = 'flex';
+    } else {
+        setupView.style.display = 'flex';
+        studioView.style.display = 'none';
+    }
+}
 
-function loadAudio(file) {
-    const url = URL.createObjectURL(file);
-    mixFileName = file.name.split('.')[0];
+// --- Wavesurfer Setup ---
+const wavesurfer = WaveSurfer.create({
+    container: '#waveform',
+    waveColor: '#4a4a4a',
+    progressColor: '#d9ff00',
+    cursorColor: '#ffffff',
+    barWidth: 2,
+    barGap: 1,
+    height: 120,
+    responsive: true,
+    normalize: true
+});
+
+// --- Initialization ---
+document.addEventListener('DOMContentLoaded', () => {
+    lucide.createIcons();
+    renderTracklist();
+    checkViewState();
+
+    if (TEST_MODE) {
+        runTestMode();
+    }
+});
+
+function createSilentWavBlob(durationSecs) {
+    const sampleRate = 8000; 
+    const numChannels = 1;
+    const bitsPerSample = 8;
+    const byteRate = sampleRate * numChannels * (bitsPerSample / 8);
+    const dataSize = durationSecs * byteRate;
+    const chunkSize = 36 + dataSize;
     
-    decodingSpinner.style.display = 'flex';
-    analyzeBtn.style.display = 'none'; // Hide until ready
+    const buffer = new ArrayBuffer(44 + dataSize);
+    const view = new DataView(buffer);
     
-    wavesurfer.load(url);
-    audioDropZone.style.display = 'none';
-    waveformContainer.style.display = 'block';
-    linkedCueZone.style.display = 'block'; 
+    const writeString = (offset, string) => {
+        for (let i = 0; i < string.length; i++) view.setUint8(offset + i, string.charCodeAt(i));
+    };
+    
+    writeString(0, 'RIFF');
+    view.setUint32(4, chunkSize, true);
+    writeString(8, 'WAVE');
+    writeString(12, 'fmt ');
+    view.setUint32(16, 16, true); 
+    view.setUint16(20, 1, true); 
+    view.setUint16(22, numChannels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, byteRate, true);
+    view.setUint16(32, numChannels * (bitsPerSample / 8), true);
+    view.setUint16(34, bitsPerSample, true);
+    writeString(36, 'data');
+    view.setUint32(40, dataSize, true);
+    
+    new Uint8Array(buffer, 44).fill(128); // 128 is silence in 8-bit PCM
+    return new Blob([buffer], { type: 'audio/wav' });
+}
+
+async function runTestMode() {
+    console.log("TEST MODE ACTIVE: Loading mock CUE data...");
+    
+    const mockCue = `PERFORMER "Test DJ"
+TITLE "ChombieWombie Test Mix"
+FILE "test.mp3" MP3
+  TRACK 01 AUDIO
+    TITLE "Track 1"
+    PERFORMER "Artist A"
+    INDEX 01 00:00:00
+  TRACK 02 AUDIO
+    TITLE "Track 2"
+    PERFORMER "Artist B"
+    INDEX 01 05:30:00
+  TRACK 03 AUDIO
+    TITLE "Track 3"
+    PERFORMER "Artist C"
+    INDEX 01 15:45:00
+  TRACK 04 AUDIO
+    TITLE "Track 4"
+    PERFORMER "Artist D"
+    INDEX 01 45:15:00`;
+
+    // Generate a synthetic waveform (noise + sine wave) for visual testing
+    const peaks = new Float32Array(1000);
+    for (let i = 0; i < peaks.length; i++) {
+        peaks[i] = (Math.abs(Math.sin(i * 0.05)) * 0.5) + (Math.random() * 0.5);
+    }
+    
+    // Generate a 1-hour silent audio blob so playback and seeking work
+    const duration = 3600;
+    const blob = createSilentWavBlob(duration);
+    const url = URL.createObjectURL(blob);
+    
+    // Load fake peaks and the silent audio
+    await wavesurfer.load(url, [peaks], duration);
+
+    const tracks = parseCueToObjects(mockCue);
+    if (tracks.length > 0) {
+        tracklist = tracks;
+        renderTracklist();
+        checkViewState();
+    }
 }
 
 wavesurfer.on('ready', () => {
-    decodingSpinner.style.display = 'none';
-    analyzeBtn.style.display = 'flex';
+    renderTimelineRuler();
 });
 
-const waveformSpinner = document.getElementById('waveform-spinner');
-const waveformDiv = document.getElementById('waveform');
-
-analyzeBtn.addEventListener('click', async () => {
-    analyzeBtn.disabled = true;
-    analyzeBtn.innerHTML = '<i data-lucide="loader"></i> Analyzing...';
-    waveformSpinner.style.display = 'flex';
-    waveformDiv.style.opacity = '0.3';
-    lucide.createIcons();
-
-    try {
-        const audioBuffer = wavesurfer.getDecodedData();
-        const detectedTimes = await detectTransitions(audioBuffer);
-        
-        let finalChapters = [];
-
-        if (linkedCueData) {
-            const uniqueTracks = deduplicateTracks(linkedCueData);
-            finalChapters = alignMetadataToTransitions(uniqueTracks, detectedTimes);
-        } else {
-            finalChapters = detectedTimes.map((time, index) => {
-                return `${formatTimePrecision(time)} Track ${index + 1}`;
-            });
-        }
-
-        outputBox.textContent = finalChapters.join('\n');
-        resultsContainer.style.display = 'block';
-        
-        // VISUAL SYNC CALCULATION
-        generateVisualSync(audioBuffer, detectedTimes);
-
-        // MIDI EXTRACTION (Non-blocking to ensure chapters still generate)
-        extractMidiRhythm(audioBuffer).catch(err => {
-            console.error("MIDI Extraction failed:", err);
-            document.getElementById('midi-status').textContent = "MIDI extraction skipped (file too large or memory limit reached).";
-        });
-
-    } catch (err) {
-        console.error("Analysis Error:", err);
-        waveformSpinner.style.display = 'none';
-        waveformDiv.style.opacity = '1';
-        
-        const errorMsg = document.createElement('div');
-        errorMsg.style.color = '#ef4444';
-        errorMsg.style.marginTop = '1rem';
-        errorMsg.style.textAlign = 'center';
-        errorMsg.innerHTML = `<i data-lucide="alert-circle"></i> Error: ${err.message || 'Analysis failed. The file might be too large for your browser\'s memory.'}`;
-        resultsContainer.innerHTML = '';
-        resultsContainer.appendChild(errorMsg);
-        resultsContainer.style.display = 'block';
-        lucide.createIcons();
-    } finally {
-        analyzeBtn.disabled = false;
-        analyzeBtn.innerHTML = '<i data-lucide="sparkles"></i> Detect Transitions';
-        waveformSpinner.style.display = 'none';
-        waveformDiv.style.opacity = '1';
-        lucide.createIcons();
+window.addEventListener('resize', () => {
+    if (wavesurfer.getDuration() > 0) {
+        renderTimelineRuler();
     }
 });
 
-async function extractMidiRhythm(audioBuffer) {
-    const midiDownloadBtn = document.getElementById('midi-download-btn');
-    const midiStatus = document.getElementById('midi-status');
-    
-    midiStatus.innerHTML = '<i data-lucide="loader"></i> Extracting MIDI rhythm...';
-    lucide.createIcons();
+// --- Event Listeners ---
+document.getElementById('audio-drop-card').onclick = () => document.getElementById('audio-input').click();
+document.getElementById('cue-drop-card').onclick = () => document.getElementById('cue-input').click();
+document.getElementById('load-audio-btn').onclick = () => document.getElementById('audio-input').click();
+document.getElementById('load-cue-btn').onclick = () => document.getElementById('cue-input').click();
 
+document.getElementById('audio-input').onchange = (e) => {
+    if (e.target.files[0]) loadAudio(e.target.files[0]);
+};
+
+document.getElementById('cue-input').onchange = (e) => {
+    if (e.target.files[0]) loadCue(e.target.files[0]);
+};
+
+playBtn.onclick = () => {
+    wavesurfer.playPause();
+    updatePlayBtn();
+};
+
+stopBtn.onclick = () => {
+    wavesurfer.pause();
+    wavesurfer.setTime(0);
+    updatePlayBtn();
+};
+
+tagBtn.onclick = () => addTrackAtCurrentTime();
+
+document.getElementById('sort-btn').onclick = () => {
+    tracklist.sort((a, b) => a.startTime - b.startTime);
+    renderTracklist();
+};
+
+document.getElementById('clear-btn').onclick = () => {
+    if (confirm("Clear entire tracklist?")) {
+        tracklist = [];
+        renderTracklist();
+    }
+};
+
+document.getElementById('copy-yt-btn').onclick = copyYouTubeChapters;
+document.getElementById('download-vs2-btn').onclick = downloadVS2Playlist;
+document.getElementById('extract-midi-btn').onclick = () => extractMidiRhythm();
+
+// --- Preview Tab Handlers ---
+document.querySelectorAll('.preview-tab').forEach(tab => {
+    tab.onclick = () => {
+        document.querySelectorAll('.preview-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        currentPreviewTab = tab.getAttribute('data-preview');
+        updatePreview();
+    };
+});
+
+// --- Keyboard Shortcuts ---
+window.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT') return;
+    if (e.code === 'Space') {
+        e.preventDefault();
+        wavesurfer.playPause();
+        updatePlayBtn();
+    }
+    if (e.code === 'KeyT') {
+        addTrackAtCurrentTime();
+    }
+});
+
+// --- Audio Loading ---
+async function loadAudio(file) {
+    showLoading("Decoding Audio...");
     try {
-        if (typeof MidiWriter === 'undefined') {
-            throw new Error("MIDI library not loaded. Please check your internet connection.");
+        mixFileName = file.name.replace(/\.[^/.]+$/, "");
+        const url = URL.createObjectURL(file);
+        
+        // Await the wavesurfer load promise so we don't hide the overlay prematurely
+        await wavesurfer.load(url);
+        console.log("Wavesurfer loaded.");
+        
+        // Attempt to reuse Wavesurfer's decoded buffer to save massive amounts of RAM
+        if (typeof wavesurfer.getDecodedData === 'function') {
+            audioBuffer = wavesurfer.getDecodedData();
         }
 
-        const sampleRate = audioBuffer.sampleRate;
-        const duration = audioBuffer.duration;
+        // Fallback: decode manually if the API isn't available
+        if (!audioBuffer) {
+            console.log("Decoding manually for MIDI analysis...");
+            const arrayBuffer = await file.arrayBuffer();
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+        }
         
-        // We'll analyze in 3 passes using OfflineAudioContext
+        console.log("Audio ready for playback and analysis.");
+        checkViewState();
+    } catch (err) {
+        alert("Error loading audio: " + err.message);
+    } finally {
+        hideLoading();
+    }
+}
+
+// --- CUE Loading ---
+async function loadCue(file) {
+    showLoading("Parsing CUE...");
+    try {
+        const text = await file.text();
+        const tracks = parseCueToObjects(text);
+        
+        if (tracks.length > 0) {
+            tracklist = tracks;
+            renderTracklist();
+            checkViewState();
+        }
+    } finally {
+        hideLoading();
+    }
+}
+
+// --- Track Management ---
+function addTrackAtCurrentTime() {
+    const time = wavesurfer.getCurrentTime();
+    const newTrack = {
+        id: crypto.randomUUID(),
+        startTime: time,
+        artist: "New Artist",
+        title: "New Track",
+        intensity: "Happy"
+    };
+    tracklist.push(newTrack);
+    tracklist.sort((a, b) => a.startTime - b.startTime);
+    renderTracklist();
+}
+
+function updateTrack(id, field, value) {
+    const track = tracklist.find(t => t.id === id);
+    if (track) {
+        if (field === 'startTime') {
+            track[field] = parseFloat(value) || 0;
+        } else {
+            track[field] = value;
+        }
+        updatePreview();
+    }
+}
+
+function deleteTrack(id) {
+    tracklist = tracklist.filter(t => t.id !== id);
+    renderTracklist();
+}
+
+function updateTrackTime(id, timeStr) {
+    const track = tracklist.find(t => t.id === id);
+    if (track) {
+        let seconds = 0;
+        const parts = timeStr.split(':').map(Number);
+        if (parts.length === 3) {
+            seconds = parts[0] * 3600 + parts[1] * 60 + parts[2];
+        } else if (parts.length === 2) {
+            seconds = parts[0] * 60 + parts[1];
+        } else if (parts.length === 1) {
+            seconds = parts[0];
+        }
+        if (!isNaN(seconds)) {
+            track.startTime = seconds;
+            tracklist.sort((a, b) => a.startTime - b.startTime);
+            renderTracklist();
+        }
+    }
+}
+
+function tagTrackTime(id) {
+    const time = wavesurfer.getCurrentTime();
+    const track = tracklist.find(t => t.id === id);
+    if (track) {
+        track.startTime = time;
+        tracklist.sort((a, b) => a.startTime - b.startTime);
+        renderTracklist();
+    }
+}
+
+// --- UI Rendering ---
+function renderTracklist() {
+    tracklistBody.innerHTML = '';
+    const markerContainer = document.getElementById('waveform-markers');
+    markerContainer.innerHTML = '';
+    const totalDuration = wavesurfer.getDuration() || 1;
+
+    tracklist.forEach((track, index) => {
+        // Render Row
+        const row = document.createElement('tr');
+        row.className = 'track-row';
+        row.innerHTML = `
+            <td style="color: var(--text-dim);">${index + 1}</td>
+            <td><input class="cell-input" value="${track.artist}" onchange="updateTrack('${track.id}', 'artist', this.value)"></td>
+            <td><input class="cell-input" value="${track.title}" onchange="updateTrack('${track.id}', 'title', this.value)"></td>
+            <td>
+                <div style="display: flex; gap: 0.25rem; align-items: center;">
+                    <button class="btn btn-accent" onclick="tagTrackTime('${track.id}')" style="padding: 0.1rem 0.3rem;" title="Set to current playhead"><i data-lucide="map-pin"></i></button>
+                    <input class="cell-input time-input" value="${formatTimePrecision(track.startTime)}" onchange="updateTrackTime('${track.id}', this.value)" style="font-family: var(--font-data); width: 80px; color: var(--accent);">
+                    <button class="btn" onclick="jumpToTrack(${track.startTime})" style="padding: 0.1rem 0.3rem;" title="Jump to time"><i data-lucide="crosshair"></i></button>
+                </div>
+            </td>
+            <td>
+                <select class="vibe-select" onchange="updateTrack('${track.id}', 'intensity', this.value)">
+                    <option value="Chill" ${track.intensity === 'Chill' ? 'selected' : ''}>Chill</option>
+                    <option value="Happy" ${track.intensity === 'Happy' ? 'selected' : ''}>Happy</option>
+                    <option value="Aggressive" ${track.intensity === 'Aggressive' ? 'selected' : ''}>Aggressive</option>
+                </select>
+            </td>
+            <td><button class="btn btn-danger" onclick="deleteTrack('${track.id}')" style="padding: 0.1rem 0.3rem;"><i data-lucide="x"></i></button></td>
+        `;
+        tracklistBody.appendChild(row);
+
+        // Render Waveform Marker
+        const markerPos = (track.startTime / totalDuration) * 100;
+        const marker = document.createElement('div');
+        marker.className = 'waveform-marker';
+        marker.style.left = `${markerPos}%`;
+        
+        // Stagger labels to prevent overlapping
+        const verticalOffset = (index % 4) * 16; 
+        marker.innerHTML = `<span class="marker-label" style="top: ${verticalOffset}px;">${index + 1}</span>`;
+        markerContainer.appendChild(marker);
+    });
+    lucide.createIcons();
+    updatePreview();
+}
+
+function renderTimelineRuler() {
+    const ruler = document.getElementById('timeline-ruler');
+    ruler.innerHTML = '';
+    const duration = wavesurfer.getDuration();
+    if (!duration) return;
+
+    const containerWidth = ruler.clientWidth || 800;
+    const minTickSpacing = 70; // pixels
+    const maxTicks = Math.max(1, Math.floor(containerWidth / minTickSpacing));
+    
+    // Find a nice interval (in seconds)
+    const rawInterval = duration / maxTicks;
+    const niceIntervals = [10, 30, 60, 120, 300, 600, 900, 1800, 3600];
+    let interval = niceIntervals[niceIntervals.length - 1];
+    for (let nice of niceIntervals) {
+        if (rawInterval <= nice) {
+            interval = nice;
+            break;
+        }
+    }
+
+    const numTicks = Math.floor(duration / interval);
+    
+    for (let i = 1; i <= numTicks; i++) {
+        const time = i * interval;
+        const pos = (time / duration) * 100;
+        
+        const tick = document.createElement('div');
+        tick.className = 'ruler-tick';
+        tick.style.left = `${pos}%`;
+
+        const label = document.createElement('div');
+        label.className = 'ruler-label';
+        label.style.left = `${pos}%`;
+        label.textContent = formatTimePrecision(time);
+
+        ruler.appendChild(tick);
+        ruler.appendChild(label);
+    }
+}
+
+function updatePreview() {
+    const previewContainer = document.querySelector('.preview-container');
+    const previewContent = document.getElementById('preview-content');
+    
+    // Save scroll position
+    const scrollPos = previewContainer ? previewContainer.scrollTop : 0;
+
+    if (currentPreviewTab === 'yt') {
+        const chapters = tracklist.map(t => `${formatTimePrecision(t.startTime)} ${t.artist} - ${t.title}`).join('\n');
+        previewContent.textContent = chapters || "No tracks added yet.";
+    } else {
+        const playlist = generateVS2Data();
+        previewContent.textContent = JSON.stringify(playlist, null, 4);
+    }
+    
+    // Restore scroll position so the user doesn't lose their place
+    if (previewContainer) {
+        previewContainer.scrollTop = scrollPos;
+    }
+}
+
+function generateVS2Data() {
+    const presetPools = {
+        'Chill': [{ id: 0, patch_name: 'CW1 Chill' }, { id: 1, patch_name: 'CW Chill 2' }],
+        'Happy': [{ id: 2, patch_name: 'CW Happy 1' }, { id: 3, patch_name: 'CW Happy 2' }],
+        'Aggressive': [{ id: 4, patch_name: 'CW 3 Intense' }, { id: 5, patch_name: 'CW Intense 2' }]
+    };
+
+    const entries = [];
+    const totalDuration = wavesurfer.getDuration() || 0;
+
+    tracklist.forEach((track, i) => {
+        const nextTime = (i < tracklist.length - 1) ? tracklist[i+1].startTime : totalDuration;
+        const segmentDuration = nextTime - track.startTime;
+        const maxDur = 180;
+        const numChunks = Math.ceil(segmentDuration / maxDur);
+        const chunkDur = segmentDuration / numChunks;
+
+        for (let j = 0; j < numChunks; j++) {
+            const pool = presetPools[track.intensity] || presetPools['Happy'];
+            const preset = pool[Math.floor(Math.random() * pool.length)];
+            entries.push({
+                bank_name: "Local",
+                duration: Math.round(chunkDur),
+                id: preset.id,
+                patch_name: preset.patch_name
+            });
+        }
+    });
+
+    return {
+        duration: Math.round(totalDuration),
+        entries: entries,
+        fade_in_time: 1000,
+        fade_out_time: 1000
+    };
+}
+
+function jumpToTrack(time) {
+    wavesurfer.setTime(time);
+}
+
+function updatePlayBtn() {
+    const isPlaying = wavesurfer.isPlaying();
+    playBtn.innerHTML = isPlaying ? '<i data-lucide="pause"></i> Pause' : '<i data-lucide="play"></i> Play';
+    lucide.createIcons();
+}
+
+wavesurfer.on('timeupdate', (currentTime) => {
+    currentTimeDisplay.textContent = formatTimePrecision(currentTime);
+});
+
+// --- Exports ---
+function copyYouTubeChapters() {
+    const chapters = tracklist.map(t => `${formatTimePrecision(t.startTime)} ${t.artist} - ${t.title}`).join('\n');
+    navigator.clipboard.writeText(chapters).then(() => alert("Chapters copied to clipboard!"));
+}
+
+async function downloadVS2Playlist() {
+    const playlist = generateVS2Data();
+    const blob = new Blob([JSON.stringify(playlist, null, 4)], { type: 'application/json' });
+    if ('showSaveFilePicker' in window) {
+        const handle = await window.showSaveFilePicker({
+            suggestedName: `${mixFileName}_playlist.json`,
+            types: [{ description: 'JSON Playlist', accept: { 'application/json': ['.json'] } }]
+        });
+        const writable = await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+    } else {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${mixFileName}_playlist.json`;
+        a.click();
+    }
+}
+
+// --- MIDI Extraction Logic (Kept and Optimized) ---
+async function extractMidiRhythm() {
+    if (!audioBuffer) {
+        alert("Load audio first!");
+        return;
+    }
+    showLoading("Extracting Rhythm...");
+    const midiStatus = document.getElementById('midi-debug-log');
+    const downloadBtn = document.getElementById('download-midi-btn');
+    midiStatus.style.display = 'block';
+    midiStatus.innerHTML = "> Analyzing mix rhythm...";
+    
+    try {
+        const duration = audioBuffer.duration;
         const bassOnsets = await analyzeBand(audioBuffer, 'lowpass', 150, 0.2);
         const midOnsets = await analyzeBand(audioBuffer, 'bandpass', 1000, 0.2);
         const trebleOnsets = await analyzeBand(audioBuffer, 'highpass', 4000, 0.1);
@@ -208,26 +548,14 @@ async function extractMidiRhythm(audioBuffer) {
         const addOnsetsToTrack = (onsets, note, channel, track) => {
             onsets.forEach(onset => {
                 const tick = Math.floor((onset.time / 60) * 120 * 128);
-                // Map energy (0.02 - 0.5) to MIDI velocity (40 - 127)
                 const velocity = Math.min(127, Math.max(40, Math.floor(onset.energy * 250)));
-                
                 track.addEvent(new MidiWriter.NoteEvent({
-                    pitch: [note], 
-                    duration: 'T8', 
-                    startTick: tick,
-                    velocity: velocity,
-                    channel: channel
+                    pitch: [note], duration: 'T8', startTick: tick, velocity: velocity, channel: channel
                 }));
             });
-            
-            // Add a silent dummy note at the very end to ensure the track is registered
-            const endTick = Math.floor((duration / 60) * 120 * 128);
+            // Marker at end
             track.addEvent(new MidiWriter.NoteEvent({
-                pitch: ['C0'], 
-                duration: '1', 
-                startTick: endTick,
-                velocity: 1, 
-                channel: channel
+                pitch: ['C0'], duration: '1', startTick: Math.floor((duration / 60) * 120 * 128), velocity: 1, channel: channel
             }));
         };
 
@@ -237,361 +565,37 @@ async function extractMidiRhythm(audioBuffer) {
 
         const write = new MidiWriter.Writer([bassTrack, midTrack, trebleTrack]);
         const base64 = write.base64();
-        
-        const debugLog = document.getElementById('midi-debug-log');
-        debugLog.style.display = 'block';
-        debugLog.innerHTML = `
-            > Bass onsets: ${bassOnsets.length}<br>
-            > Mid onsets: ${midOnsets.length}<br>
-            > Treble onsets: ${trebleOnsets.length}<br>
-            > Generating MIDI file...<br>
-            > Base64 length: ${base64.length} chars<br>
-            > Filename: ${(mixFileName || 'mix_rhythm').replace(/[^a-z0-9]/gi, '_').toLowerCase()}.mid
-        `;
 
-        midiDownloadBtn.style.display = 'flex';
-        midiDownloadBtn.onclick = async () => {
-            try {
-                const binaryStr = atob(base64);
-                const bytes = new Uint8Array(binaryStr.length);
-                for (let i = 0; i < binaryStr.length; i++) {
-                    bytes[i] = binaryStr.charCodeAt(i);
-                }
-                
-                const cleanName = (mixFileName || 'mix_rhythm').replace(/[^a-z0-9]/gi, '_').toLowerCase();
-                const fileName = `${cleanName}.mid`;
-
-                if ('showSaveFilePicker' in window) {
-                    try {
-                        const handle = await window.showSaveFilePicker({
-                            suggestedName: fileName,
-                            types: [{
-                                description: 'MIDI File',
-                                accept: {'audio/midi': ['.mid']},
-                            }],
-                        });
-                        const writable = await handle.createWritable();
-                        await writable.write(bytes);
-                        await writable.close();
-                        debugLog.innerHTML += `<br>> File saved to your computer.`;
-                        return;
-                    } catch (err) {
-                        console.log("Picker cancelled, using fallback.");
-                    }
-                }
-
-                const blob = new Blob([bytes], {type: 'audio/midi'});
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = fileName;
-                document.body.appendChild(a);
-                a.click();
-                setTimeout(() => {
-                    document.body.removeChild(a);
-                    URL.revokeObjectURL(url);
-                }, 100);
-            } catch (err) {
-                console.error("Download error:", err);
-                debugLog.innerHTML += `<br>> Error: ${err.message}`;
-            }
-        };
-
-        midiStatus.innerHTML = `
-            <div style="color: #10b981;">
-                <i data-lucide="check-circle"></i>
-                Rhythm extracted: ${bassOnsets.length + midOnsets.length + trebleOnsets.length} notes found.
-            </div>
-        `;
-        lucide.createIcons();
-
-    } catch (err) {
-        console.error("MIDI Extraction Error:", err);
-        midiStatus.innerHTML = `<span style="color: #ef4444;"><i data-lucide="alert-triangle"></i> Error: ${err.message}</span>`;
-        lucide.createIcons();
-    }
-}
-
-async function analyzeBand(audioBuffer, filterType, freq, threshold) {
-    const targetSampleRate = 8000;
-    const offlineCtx = new OfflineAudioContext(1, Math.floor(audioBuffer.duration * targetSampleRate), targetSampleRate);
-    
-    const source = offlineCtx.createBufferSource();
-    source.buffer = audioBuffer;
-
-    const filter = offlineCtx.createBiquadFilter();
-    filter.type = filterType;
-    filter.frequency.value = freq;
-    if (filterType === 'bandpass') filter.Q.value = 1.0;
-
-    source.connect(filter);
-    filter.connect(offlineCtx.destination);
-    source.start();
-
-    const renderedBuffer = await offlineCtx.startRendering();
-    const data = renderedBuffer.getChannelData(0);
-    const sampleRate = renderedBuffer.sampleRate;
-    
-    const onsets = [];
-    const windowSize = Math.floor(sampleRate * 0.1); 
-    let lastEnergy = 0;
-    let cooldown = 0;
-
-    for (let i = 0; i < data.length; i += windowSize) {
-        let sum = 0;
-        let count = 0;
-        for (let j = 0; j < windowSize && (i + j) < data.length; j++) {
-            sum += data[i + j] * data[i + j];
-            count++;
-        }
-        const energy = Math.sqrt(sum / count);
-        
-        // Use a more aggressive threshold and longer cooldown (250ms) to prevent stack overflow
-        if (energy > lastEnergy * (1 + threshold) && energy > 0.03 && cooldown <= 0) {
-            onsets.push({ time: i / sampleRate, energy: energy });
-            cooldown = Math.floor(sampleRate * 0.25 / windowSize); 
-        }
-        
-        lastEnergy = energy;
-        if (cooldown > 0) cooldown--;
-        
-        // Hard limit per band to prevent library crash
-        if (onsets.length > 5000) break;
-    }
-    
-    return onsets;
-}
-
-function generateVisualSync(audioBuffer, transitions) {
-    const visualOutput = document.getElementById('visual-output');
-    const downloadBtn = document.getElementById('vs2-download-btn');
-    const data = audioBuffer.getChannelData(0);
-    const sampleRate = audioBuffer.sampleRate;
-    const scenes = [];
-
-    // First pass: calculate energy for all scenes
-    const sceneEnergies = [];
-    for (let i = 0; i < transitions.length; i++) {
-        const start = transitions[i];
-        const end = (i < transitions.length - 1) ? transitions[i + 1] : audioBuffer.duration;
-        const startIdx = Math.floor(start * sampleRate);
-        const endIdx = Math.min(data.length, Math.floor(end * sampleRate));
-        if (startIdx >= endIdx) continue;
-
-        let sum = 0;
-        let count = 0;
-        const segmentLength = endIdx - startIdx;
-        const step = Math.max(1, Math.floor(segmentLength / 500));
-        for (let j = startIdx; j < endIdx; j += step) {
-            const val = data[j];
-            if (val !== undefined) {
-                sum += Math.abs(val);
-                count++;
-            }
-        }
-        sceneEnergies.push({ id: i + 1, start, duration: end - start, energy: sum / count });
-    }
-
-    // Second pass: Determine thresholds based on percentiles and split long scenes
-    const sortedEnergies = [...sceneEnergies].map(s => s.energy).sort((a, b) => a - b);
-    const chillThreshold = sortedEnergies[Math.floor(sortedEnergies.length * 0.33)] || 0.1;
-    const happyThreshold = sortedEnergies[Math.floor(sortedEnergies.length * 0.66)] || 0.2;
-
-    const finalScenes = [];
-    sceneEnergies.forEach(s => {
-        let intensity = 'Chill';
-        if (s.energy > happyThreshold) {
-            intensity = 'Aggressive';
-        } else if (s.energy > chillThreshold) {
-            intensity = 'Happy';
-        }
-
-        // Split long scenes (max 180 seconds)
-        const maxDuration = 180;
-        if (s.duration > maxDuration) {
-            const numChunks = Math.ceil(s.duration / maxDuration);
-            const chunkDuration = s.duration / numChunks;
-            for (let i = 0; i < numChunks; i++) {
-                finalScenes.push({
-                    id: `${s.id}.${i + 1}`,
-                    start: s.start + (i * chunkDuration),
-                    duration: chunkDuration,
-                    intensity: intensity
+        midiStatus.innerHTML += `<br>> Extraction complete. ${bassOnsets.length + midOnsets.length + trebleOnsets.length} notes found.`;
+        downloadBtn.style.display = 'block';
+        hideLoading();
+        downloadBtn.onclick = async () => {
+            const binaryStr = atob(base64);
+            const bytes = new Uint8Array(binaryStr.length);
+            for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+            const blob = new Blob([bytes], {type: 'audio/midi'});
+            
+            if ('showSaveFilePicker' in window) {
+                const handle = await window.showSaveFilePicker({
+                    suggestedName: `${mixFileName}.mid`,
+                    types: [{ description: 'MIDI File', accept: { 'audio/midi': ['.mid'] } }]
                 });
+                const writable = await handle.createWritable();
+                await writable.write(blob);
+                await writable.close();
             }
-        } else {
-            finalScenes.push({ ...s, intensity });
-        }
-    });
-
-    // Show download button
-    downloadBtn.style.display = 'flex';
-    downloadBtn.onclick = () => downloadVS2Playlist(audioBuffer.duration, finalScenes);
-
-    visualOutput.innerHTML = `
-        <div class="scene-list">
-            ${finalScenes.map(s => `
-                <div class="scene-item">
-                    <div class="scene-info">
-                        <span class="scene-title">Scene ${s.id}</span>
-                        <span class="scene-meta">Start: ${formatTimePrecision(s.start)} | Duration: ${formatDuration(s.duration)}</span>
-                    </div>
-                    <span class="intensity-badge intensity-${s.intensity.toLowerCase()}">${s.intensity}</span>
-                </div>
-            `).join('')}
-        </div>
-    `;
-    lucide.createIcons();
-}
-
-function downloadVS2Playlist(totalDuration, scenes) {
-    const presetPools = {
-        'Chill': [
-            { id: 0, patch_name: 'CW1 Chill' },
-            { id: 1, patch_name: 'CW Chill 2' }
-        ],
-        'Happy': [
-            { id: 2, patch_name: 'CW Happy 1' },
-            { id: 3, patch_name: 'CW Happy 2' }
-        ],
-        'Aggressive': [
-            { id: 4, patch_name: 'CW 3 Intense' },
-            { id: 5, patch_name: 'CW Intense 2' }
-        ]
-    };
-
-    const entries = scenes.map(scene => {
-        const pool = presetPools[scene.intensity] || presetPools['Chill'];
-        const preset = pool[Math.floor(Math.random() * pool.length)];
-        
-        return {
-            bank_name: "Local",
-            duration: Math.round(scene.duration),
-            id: preset.id,
-            patch_name: preset.patch_name
         };
-    });
-
-    const playlist = {
-        duration: Math.round(totalDuration),
-        entries: entries,
-        fade_in_time: 1000,
-        fade_out_time: 1000
-    };
-
-    const blob = new Blob([JSON.stringify(playlist, null, 4)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${mixFileName}_playlist.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-}
-
-function formatDuration(seconds) {
-    const m = Math.floor(seconds / 60);
-    const s = Math.floor(seconds % 60);
-    return `${m}m ${s}s`;
-}
-
-function deduplicateTracks(tracks) {
-    if (!tracks || tracks.length === 0) return [];
-    const unique = [tracks[0]];
-    for (let i = 1; i < tracks.length; i++) {
-        const current = tracks[i];
-        const prev = unique[unique.length - 1];
-        // If it's the same track within 60 seconds, it's likely a duplicate load/scroll
-        const isDuplicate = current.title === prev.title && current.performer === prev.performer;
-        if (!isDuplicate) {
-            unique.push(current);
-        }
+    } catch (err) {
+        midiStatus.innerHTML += `<br>> Error: ${err.message}`;
     }
-    return unique;
 }
 
-function alignMetadataToTransitions(tracks, transitions) {
-    const chapters = tracks.map(track => {
-        const cueSeconds = cueTimeToSeconds(track.rawTime);
-        // Find nearest audio transition within 120 seconds
-        let bestTime = cueSeconds;
-        let minDiff = 120; 
-
-        transitions.forEach(t => {
-            const diff = Math.abs(t - cueSeconds);
-            if (diff < minDiff) {
-                minDiff = diff;
-                bestTime = t;
-            }
-        });
-
-        return {
-            time: bestTime,
-            formattedTime: formatTimePrecision(bestTime),
-            metadata: `${track.performer} - ${track.title}`
-        };
-    });
-
-    // Remove duplicates where two tracks snapped to the same timestamp
-    const uniqueChapters = [];
-    const seenTimes = new Set();
-    
-    // We iterate backwards or forwards? Usually the last track at a timestamp is the "winner"
-    // but in DJ sets, the first one might be the mix start.
-    // Let's keep the first one but filter out ones that are identical.
-    for (const chapter of chapters) {
-        if (!seenTimes.has(chapter.formattedTime)) {
-            uniqueChapters.push(`${chapter.formattedTime} ${chapter.metadata}`);
-            seenTimes.add(chapter.formattedTime);
-        }
-    }
-
-    return uniqueChapters;
-}
-
-function cueTimeToSeconds(timeStr) {
-    if (!timeStr) return 0;
-    const parts = timeStr.split(':').map(Number);
-    if (parts.length === 3) {
-        // We need to guess if it's HH:MM:SS or MM:SS:FF
-        // Standard CUE is MM:SS:FF (where MM can be > 60)
-        // Many modern DJ exports are HH:MM:SS
-        
-        const p1 = parts[0];
-        const p2 = parts[1];
-        const p3 = parts[2];
-
-        // If p1 > 60, it's definitely MM:SS:FF (p1 = minutes)
-        if (p1 >= 60) {
-            return p1 * 60 + p2;
-        }
-        
-        // If it's a DJ set, tracks are usually > 1 minute apart.
-        // If we treat it as HH:MM:SS and the gaps are reasonable, that's likely it.
-        // However, the safest bet is to check if it's a recorded set (large MM).
-        // For this app, we'll assume HH:MM:SS if p1 < 24 and MM:SS:FF otherwise, 
-        // OR we just treat it as HH:MM:SS which is more common in user-facing formats.
-        
-        // REFINED LOGIC: If the user got 00:00:55 instead of 00:55:00, 
-        // it means parts[0]=0, parts[1]=55. 
-        // In MM:SS:FF, that is 55 seconds.
-        // In HH:MM:SS, that is 55 minutes.
-        // A DJ set track at 55 seconds is rare (unless it's the first track).
-        // So if p1 is 0 and p2 is large, it's almost certainly HH:MM:SS.
-        
-        return p1 * 3600 + p2 * 60 + p3 / 75; // 75 frames per second in CUE
-    }
-    return 0;
-}
-
+// --- Utilities ---
 function formatTimePrecision(seconds) {
     const h = Math.floor(seconds / 3600);
     const m = Math.floor((seconds % 3600) / 60);
     const s = Math.floor(seconds % 60);
-    
     const pad = (n) => String(n).padStart(2, '0');
-    
     return `${pad(h)}:${pad(m)}:${pad(s)}`;
 }
 
@@ -607,7 +611,7 @@ function parseCueToObjects(text) {
         
         const trackMatch = line.trim().match(/^TRACK\s+(\d+)\s+AUDIO/i);
         if (trackMatch) {
-            currentTrack = { title: "Unknown Title", performer: globalPerformer, rawTime: "" };
+            currentTrack = { id: crypto.randomUUID(), title: "Unknown Title", artist: globalPerformer, startTime: 0, intensity: "Happy" };
             tracks.push(currentTrack);
         }
 
@@ -617,25 +621,37 @@ function parseCueToObjects(text) {
             const iMatch = line.trim().match(/^INDEX\s+01\s+(\d{1,3}):(\d{2}):(\d{2})/i);
 
             if (tMatch) currentTrack.title = tMatch[1];
-            if (pMatch) currentTrack.performer = pMatch[1];
-            if (iMatch) currentTrack.rawTime = `${iMatch[1]}:${iMatch[2]}:${iMatch[3]}`;
+            if (pMatch) currentTrack.artist = pMatch[1];
+            if (iMatch) {
+                const mm = parseInt(iMatch[1]);
+                const ss = parseInt(iMatch[2]);
+                currentTrack.startTime = mm * 60 + ss;
+            }
         }
     }
     return tracks;
 }
 
-function addMarker(time) {
-    // Note: Wavesurfer 7 uses a different marker system or basic CSS/Canvas markers
-    // For simplicity, we'll just log it or use a basic marker if plugin available.
-    // Here we'll just focus on the timestamp generation.
-}
+async function analyzeBand(audioBuffer, filterType, freq, threshold) {
+    const targetSampleRate = 8000;
+    const offlineCtx = new OfflineAudioContext(1, Math.floor(audioBuffer.duration * targetSampleRate), targetSampleRate);
+    const source = offlineCtx.createBufferSource();
+    source.buffer = audioBuffer;
+    const filter = offlineCtx.createBiquadFilter();
+    filter.type = filterType;
+    filter.frequency.value = freq;
+    source.connect(filter);
+    filter.connect(offlineCtx.destination);
+    source.start();
 
-async function detectTransitions(audioBuffer) {
-    const data = audioBuffer.getChannelData(0);
-    const sampleRate = audioBuffer.sampleRate;
-    const windowSize = Math.floor(sampleRate * 0.5); // 0.5 second precision
-    const energy = [];
-    
+    const renderedBuffer = await offlineCtx.startRendering();
+    const data = renderedBuffer.getChannelData(0);
+    const sampleRate = renderedBuffer.sampleRate;
+    const onsets = [];
+    const windowSize = Math.floor(sampleRate * 0.1); 
+    let lastEnergy = 0;
+    let cooldown = 0;
+
     for (let i = 0; i < data.length; i += windowSize) {
         let sum = 0;
         let count = 0;
@@ -643,156 +659,34 @@ async function detectTransitions(audioBuffer) {
             sum += data[i + j] * data[i + j];
             count++;
         }
-        energy.push(Math.sqrt(sum / count));
-    }
-    
-    const transitions = [0]; 
-    const minGap = 60; // Min 60s between tracks
-    let lastT = 0;
-
-    for (let i = 2; i < energy.length - 2; i++) {
-        const t = i * (windowSize / sampleRate);
-        if (t - lastT < minGap) continue;
-
-        const prev = (energy[i-1] + energy[i-2]) / 2;
-        const curr = energy[i];
-        const next = (energy[i+1] + energy[i+2]) / 2;
-
-        // Detection: Sudden drop (breakdown) or sudden rise (drop-in)
-        if ((curr < prev * 0.5 && next > curr * 1.5) || (curr > prev * 2.0 && prev > 0.01)) {
-            transitions.push(t);
-            lastT = t;
+        const energy = Math.sqrt(sum / count);
+        if (energy > lastEnergy * (1 + threshold) && energy > 0.03 && cooldown <= 0) {
+            onsets.push({ time: i / sampleRate, energy: energy });
+            cooldown = Math.floor(sampleRate * 0.25 / windowSize); 
         }
+        lastEnergy = energy;
+        if (cooldown > 0) cooldown--;
+        if (onsets.length > 5000) break;
     }
-    
-    return transitions;
+    return onsets;
 }
 
-// Keep existing CUE logic...
-const dropZone = document.getElementById('drop-zone');
-const fileInput = document.getElementById('file-input');
-const resultsContainer = document.getElementById('results');
-const outputBox = document.getElementById('output');
-const copyBtn = document.getElementById('copy-btn');
-const resetBtn = document.getElementById('reset-btn');
-
-// Drag and drop handlers
-dropZone.addEventListener('dragover', (e) => {
+// --- Drag & Drop Handlers ---
+window.addEventListener('dragover', (e) => {
     e.preventDefault();
-    dropZone.classList.add('drag-over');
+    dropOverlay.classList.add('active');
 });
 
-dropZone.addEventListener('dragleave', () => {
-    dropZone.classList.remove('drag-over');
+dropOverlay.addEventListener('dragleave', () => {
+    dropOverlay.classList.remove('active');
 });
 
-dropZone.addEventListener('drop', (e) => {
+window.addEventListener('drop', (e) => {
     e.preventDefault();
-    dropZone.classList.remove('drag-over');
+    dropOverlay.classList.remove('active');
     const file = e.dataTransfer.files[0];
-    if (file && file.name.endsWith('.cue')) {
-        processFile(file);
-    } else {
-        alert('Please drop a valid .cue file');
+    if (file) {
+        if (file.name.endsWith('.cue')) loadCue(file);
+        else if (file.type.startsWith('audio/')) loadAudio(file);
     }
 });
-
-dropZone.addEventListener('click', () => fileInput.click());
-
-fileInput.addEventListener('change', (e) => {
-    const file = e.target.files[0];
-    if (file) processFile(file);
-});
-
-resetBtn.addEventListener('click', () => {
-    resultsContainer.style.display = 'none';
-    outputBox.textContent = '';
-    if (fileInput) fileInput.value = '';
-    if (audioInput) audioInput.value = '';
-    waveformContainer.style.display = 'none';
-    audioDropZone.style.display = 'block';
-});
-
-copyBtn.addEventListener('click', () => {
-    navigator.clipboard.writeText(outputBox.textContent).then(() => {
-        const originalText = copyBtn.innerHTML;
-        copyBtn.innerHTML = '<i data-lucide="check"></i> Copied!';
-        lucide.createIcons();
-        setTimeout(() => {
-            copyBtn.innerHTML = originalText;
-            lucide.createIcons();
-        }, 2000);
-    });
-});
-
-async function processFile(file) {
-    const text = await file.text();
-    const chapters = parseCue(text);
-    
-    if (chapters.length === 0) {
-        alert('No tracks found in the CUE file.');
-        return;
-    }
-
-    outputBox.textContent = chapters.join('\n');
-    resultsContainer.style.display = 'block';
-    
-    // Smooth scroll to results
-    resultsContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-}
-
-function parseCue(text) {
-    const lines = text.split(/\r?\n/);
-    const tracks = [];
-    let currentTrack = null;
-    let globalPerformer = "";
-
-    // First pass to find global performer if needed
-    for (let line of lines) {
-        const performerMatch = line.trim().match(/^PERFORMER\s+"(.+)"/i);
-        if (performerMatch && !currentTrack) {
-            globalPerformer = performerMatch[1];
-        }
-        
-        const trackMatch = line.trim().match(/^TRACK\s+(\d+)\s+AUDIO/i);
-        if (trackMatch) {
-            currentTrack = {
-                number: trackMatch[1],
-                title: "",
-                performer: globalPerformer,
-                time: ""
-            };
-            tracks.push(currentTrack);
-        }
-
-        if (currentTrack) {
-            const titleMatch = line.trim().match(/^TITLE\s+"(.+)"/i);
-            const pMatch = line.trim().match(/^PERFORMER\s+"(.+)"/i);
-            const indexMatch = line.trim().match(/^INDEX\s+01\s+(\d{2,3}):(\d{2}):(\d{2})/i);
-
-            if (titleMatch) currentTrack.title = titleMatch[1];
-            if (pMatch) currentTrack.performer = pMatch[1];
-            if (indexMatch) {
-                currentTrack.time = formatTime(indexMatch[1], indexMatch[2]);
-            }
-        }
-    }
-
-    return tracks.map(t => `${t.time} ${t.performer} - ${t.title}`);
-}
-
-function formatTime(mm, ss) {
-    let minutes = parseInt(mm, 10);
-    let seconds = parseInt(ss, 10);
-
-    const hours = Math.floor(minutes / 60);
-    const remainingMinutes = minutes % 60;
-
-    const pad = (num) => String(num).padStart(2, '0');
-
-    if (hours > 0) {
-        return `${pad(hours)}:${pad(remainingMinutes)}:${pad(seconds)}`;
-    } else {
-        return `${pad(remainingMinutes)}:${pad(seconds)}`;
-    }
-}

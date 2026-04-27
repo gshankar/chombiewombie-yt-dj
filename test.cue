@@ -1,0 +1,19 @@
+PERFORMER "Test DJ"
+TITLE "ChombieWombie Test Mix"
+FILE "test.mp3" MP3
+  TRACK 01 AUDIO
+    TITLE "Track 1"
+    PERFORMER "Artist A"
+    INDEX 01 00:00:00
+  TRACK 02 AUDIO
+    TITLE "Track 2"
+    PERFORMER "Artist B"
+    INDEX 01 01:30:00
+  TRACK 03 AUDIO
+    TITLE "Track 3"
+    PERFORMER "Artist C"
+    INDEX 01 03:45:00
+  TRACK 04 AUDIO
+    TITLE "Track 4"
+    PERFORMER "Artist D"
+    INDEX 01 05:15:00
