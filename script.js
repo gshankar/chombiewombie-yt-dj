@@ -11,6 +11,13 @@ let isProcessing = false;
 let currentPreviewTab = 'yt';
 const TEST_MODE = true; // Set to false to disable auto-loading test files
 
+let vibeConfig = {
+    'Chill': ['CW1 Chill', 'CW Chill 2'],
+    'Happy': ['CW Happy 1', 'CW Happy 2'],
+    'Aggressive': ['CW 3 Intense', 'CW Intense 2']
+};
+
+
 // --- DOM Elements ---
 const tracklistBody = document.getElementById('tracklist-body');
 const waveformSection = document.getElementById('waveform-section');
@@ -23,7 +30,7 @@ const playBtn = document.getElementById('play-btn');
 const stopBtn = document.getElementById('stop-btn');
 const tagBtn = document.getElementById('tag-btn');
 const currentTimeDisplay = document.getElementById('current-time');
-const dropOverlay = document.getElementById('drop-overlay');
+
 
 // --- Helpers ---
 function showLoading(text = "Processing...") {
@@ -56,19 +63,63 @@ const wavesurfer = WaveSurfer.create({
     barGap: 1,
     height: 120,
     responsive: true,
-    normalize: true
+    normalize: true,
+    plugins: [
+        WaveSurfer.Spectrogram.create({
+            container: '#spectrogram',
+            labels: true,
+            height: 100,
+            splitChannels: false
+        })
+    ]
 });
 
 // --- Initialization ---
 document.addEventListener('DOMContentLoaded', () => {
+    loadSession();
     lucide.createIcons();
     renderTracklist();
     checkViewState();
 
-    if (TEST_MODE) {
+    if (TEST_MODE && tracklist.length === 0) {
         runTestMode();
     }
 });
+
+// --- Session Persistence ---
+function saveSession() {
+    const session = {
+        tracklist: tracklist,
+        vibeConfig: vibeConfig,
+        mixFileName: mixFileName
+    };
+    localStorage.setItem('cw_session', JSON.stringify(session));
+}
+
+function loadSession() {
+    try {
+        const data = localStorage.getItem('cw_session');
+        if (data) {
+            const session = JSON.parse(data);
+            if (session.tracklist) tracklist = session.tracklist;
+            if (session.mixFileName) mixFileName = session.mixFileName;
+            
+            if (session.vibeConfig) {
+                // Backward compatibility: Convert old object arrays to string arrays
+                for (let key in session.vibeConfig) {
+                    let pool = session.vibeConfig[key];
+                    if (pool.length > 0 && typeof pool[0] === 'object') {
+                        session.vibeConfig[key] = pool.map(p => p.patch_name || '[Unknown]');
+                    }
+                }
+                vibeConfig = session.vibeConfig;
+            }
+        }
+    } catch(e) {
+        console.error("Error loading session", e);
+    }
+}
+
 
 function createSilentWavBlob(durationSecs) {
     const sampleRate = 8000; 
@@ -145,6 +196,7 @@ FILE "test.mp3" MP3
         tracklist = tracks;
         renderTracklist();
         checkViewState();
+        saveSession();
     }
 }
 
@@ -190,16 +242,80 @@ document.getElementById('sort-btn').onclick = () => {
     renderTracklist();
 };
 
-document.getElementById('clear-btn').onclick = () => {
-    if (confirm("Clear entire tracklist?")) {
+document.getElementById('reset-btn').onclick = () => {
+    if (confirm("Clear entire tracklist and wipe session?")) {
         tracklist = [];
+        localStorage.removeItem('cw_session');
         renderTracklist();
+        checkViewState();
     }
 };
 
-document.getElementById('copy-yt-btn').onclick = copyYouTubeChapters;
-document.getElementById('download-vs2-btn').onclick = downloadVS2Playlist;
-document.getElementById('extract-midi-btn').onclick = () => extractMidiRhythm();
+// --- Settings Modal ---
+const settingsModal = document.getElementById('settings-modal');
+
+function renderVibeSettings() {
+    const container = document.getElementById('vibe-ui-container');
+    container.innerHTML = '';
+    
+    for (let vibeName in vibeConfig) {
+        addVibeRow(vibeName, vibeConfig[vibeName].join(', '));
+    }
+    lucide.createIcons();
+}
+
+function addVibeRow(name = '', patches = '') {
+    const container = document.getElementById('vibe-ui-container');
+    const row = document.createElement('div');
+    row.className = 'vibe-setting-row';
+    row.style.display = 'flex';
+    row.style.gap = '1rem';
+    row.style.marginBottom = '0.5rem';
+    
+    row.innerHTML = `
+        <input type="text" class="cell-input vibe-name-input" value="${name}" placeholder="e.g. Happy" style="flex: 1; border: 1px solid var(--border); padding: 0.5rem;">
+        <input type="text" class="cell-input vibe-patches-input" value="${patches}" placeholder="e.g. Patch1, Patch2" style="flex: 2; border: 1px solid var(--border); padding: 0.5rem;">
+        <button class="btn btn-danger remove-vibe-btn" style="padding: 0.5rem;" title="Remove Vibe"><i data-lucide="trash-2"></i></button>
+    `;
+    
+    row.querySelector('.remove-vibe-btn').onclick = () => row.remove();
+    container.appendChild(row);
+    lucide.createIcons();
+}
+
+document.getElementById('add-vibe-btn').onclick = () => addVibeRow();
+
+document.getElementById('settings-btn').onclick = () => {
+    renderVibeSettings();
+    settingsModal.style.display = 'flex';
+};
+
+document.getElementById('close-settings-btn').onclick = () => {
+    settingsModal.style.display = 'none';
+};
+
+document.getElementById('save-settings-btn').onclick = () => {
+    const rows = document.querySelectorAll('.vibe-setting-row');
+    const newConfig = {};
+    rows.forEach(row => {
+        const name = row.querySelector('.vibe-name-input').value.trim();
+        const patches = row.querySelector('.vibe-patches-input').value.split(',').map(s => s.trim()).filter(s => s);
+        if (name && patches.length > 0) {
+            newConfig[name] = patches;
+        }
+    });
+    
+    if (Object.keys(newConfig).length === 0) {
+        alert("You must have at least one valid Vibe with patches.");
+        return;
+    }
+    
+    vibeConfig = newConfig;
+    saveSession();
+    renderTracklist();
+    updatePreview();
+    settingsModal.style.display = 'none';
+};
 
 // --- Preview Tab Handlers ---
 document.querySelectorAll('.preview-tab').forEach(tab => {
@@ -297,12 +413,28 @@ function updateTrack(id, field, value) {
         } else {
             track[field] = value;
         }
+        saveSession();
         updatePreview();
     }
 }
 
 function deleteTrack(id) {
     tracklist = tracklist.filter(t => t.id !== id);
+    saveSession();
+    renderTracklist();
+}
+
+function addTrackAtCurrentTime() {
+    const time = wavesurfer.getCurrentTime();
+    tracklist.push({
+        id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2),
+        title: "New Track",
+        artist: "Unknown",
+        startTime: time,
+        intensity: Object.keys(vibeConfig)[0] || "Happy"
+    });
+    tracklist.sort((a, b) => a.startTime - b.startTime);
+    saveSession();
     renderTracklist();
 }
 
@@ -321,6 +453,7 @@ function updateTrackTime(id, timeStr) {
         if (!isNaN(seconds)) {
             track.startTime = seconds;
             tracklist.sort((a, b) => a.startTime - b.startTime);
+            saveSession();
             renderTracklist();
         }
     }
@@ -332,9 +465,13 @@ function tagTrackTime(id) {
     if (track) {
         track.startTime = time;
         tracklist.sort((a, b) => a.startTime - b.startTime);
+        saveSession();
         renderTracklist();
     }
 }
+
+// --- Drag & Drop Reordering Variables ---
+let draggedTrackIndex = null;
 
 // --- UI Rendering ---
 function renderTracklist() {
@@ -343,12 +480,46 @@ function renderTracklist() {
     markerContainer.innerHTML = '';
     const totalDuration = wavesurfer.getDuration() || 1;
 
+    const vibeOptions = Object.keys(vibeConfig).map(v => `<option value="${v}">${v}</option>`).join('');
+
     tracklist.forEach((track, index) => {
         // Render Row
         const row = document.createElement('tr');
         row.className = 'track-row';
+        row.draggable = true;
+        
+        // Drag Events
+        row.ondragstart = (e) => {
+            draggedTrackIndex = index;
+            e.dataTransfer.effectAllowed = 'move';
+            row.style.opacity = '0.5';
+        };
+        row.ondragover = (e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            row.style.borderTop = '2px solid var(--accent)';
+        };
+        row.ondragleave = () => {
+            row.style.borderTop = '';
+        };
+        row.ondrop = (e) => {
+            e.preventDefault();
+            row.style.borderTop = '';
+            if (draggedTrackIndex !== null && draggedTrackIndex !== index) {
+                const draggedItem = tracklist.splice(draggedTrackIndex, 1)[0];
+                tracklist.splice(index, 0, draggedItem);
+                saveSession();
+                renderTracklist();
+            }
+            draggedTrackIndex = null;
+        };
+        row.ondragend = () => {
+            row.style.opacity = '1';
+            draggedTrackIndex = null;
+        };
+
         row.innerHTML = `
-            <td style="color: var(--text-dim);">${index + 1}</td>
+            <td style="color: var(--text-dim); cursor: grab;"><i data-lucide="grip-vertical" style="width:16px;height:16px;"></i> ${index + 1}</td>
             <td><input class="cell-input" value="${track.artist}" onchange="updateTrack('${track.id}', 'artist', this.value)"></td>
             <td><input class="cell-input" value="${track.title}" onchange="updateTrack('${track.id}', 'title', this.value)"></td>
             <td>
@@ -360,13 +531,12 @@ function renderTracklist() {
             </td>
             <td>
                 <select class="vibe-select" onchange="updateTrack('${track.id}', 'intensity', this.value)">
-                    <option value="Chill" ${track.intensity === 'Chill' ? 'selected' : ''}>Chill</option>
-                    <option value="Happy" ${track.intensity === 'Happy' ? 'selected' : ''}>Happy</option>
-                    <option value="Aggressive" ${track.intensity === 'Aggressive' ? 'selected' : ''}>Aggressive</option>
+                    ${Object.keys(vibeConfig).map(v => `<option value="${v}" ${track.intensity === v ? 'selected' : ''}>${v}</option>`).join('')}
                 </select>
             </td>
             <td><button class="btn btn-danger" onclick="deleteTrack('${track.id}')" style="padding: 0.1rem 0.3rem;"><i data-lucide="x"></i></button></td>
         `;
+
         tracklistBody.appendChild(row);
 
         // Render Waveform Marker
@@ -447,12 +617,6 @@ function updatePreview() {
 }
 
 function generateVS2Data() {
-    const presetPools = {
-        'Chill': [{ id: 0, patch_name: 'CW1 Chill' }, { id: 1, patch_name: 'CW Chill 2' }],
-        'Happy': [{ id: 2, patch_name: 'CW Happy 1' }, { id: 3, patch_name: 'CW Happy 2' }],
-        'Aggressive': [{ id: 4, patch_name: 'CW 3 Intense' }, { id: 5, patch_name: 'CW Intense 2' }]
-    };
-
     const entries = [];
     const totalDuration = wavesurfer.getDuration() || 0;
 
@@ -463,21 +627,23 @@ function generateVS2Data() {
         const numChunks = Math.ceil(segmentDuration / maxDur);
         const chunkDur = segmentDuration / numChunks;
 
+        let chunkIdCounter = 0;
         for (let j = 0; j < numChunks; j++) {
-            const pool = presetPools[track.intensity] || presetPools['Happy'];
-            const preset = pool[Math.floor(Math.random() * pool.length)];
+            const pool = vibeConfig[track.intensity] || vibeConfig[Object.keys(vibeConfig)[0]];
+            const patchName = pool[Math.floor(Math.random() * pool.length)];
             entries.push({
                 bank_name: "Local",
                 duration: Math.round(chunkDur),
-                id: preset.id,
-                patch_name: preset.patch_name
+                id: chunkIdCounter++,
+                patch_name: patchName
             });
         }
     });
 
     return {
-        duration: Math.round(totalDuration),
-        entries: entries,
+        _version: 1,
+        schema_version: 1,
+        playlist: entries,
         fade_in_time: 1000,
         fade_out_time: 1000
     };
@@ -671,22 +837,3 @@ async function analyzeBand(audioBuffer, filterType, freq, threshold) {
     return onsets;
 }
 
-// --- Drag & Drop Handlers ---
-window.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    dropOverlay.classList.add('active');
-});
-
-dropOverlay.addEventListener('dragleave', () => {
-    dropOverlay.classList.remove('active');
-});
-
-window.addEventListener('drop', (e) => {
-    e.preventDefault();
-    dropOverlay.classList.remove('active');
-    const file = e.dataTransfer.files[0];
-    if (file) {
-        if (file.name.endsWith('.cue')) loadCue(file);
-        else if (file.type.startsWith('audio/')) loadAudio(file);
-    }
-});
