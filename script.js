@@ -63,16 +63,9 @@ const wavesurfer = WaveSurfer.create({
     barGap: 1,
     height: 120,
     responsive: true,
-    normalize: true,
-    plugins: [
-        WaveSurfer.Spectrogram.create({
-            container: '#spectrogram',
-            labels: true,
-            height: 100,
-            splitChannels: false
-        })
-    ]
+    normalize: true
 });
+
 
 // --- Initialization ---
 document.addEventListener('DOMContentLoaded', () => {
@@ -101,7 +94,14 @@ function loadSession() {
         const data = localStorage.getItem('cw_session');
         if (data) {
             const session = JSON.parse(data);
-            if (session.tracklist) tracklist = session.tracklist;
+            if (session.tracklist) {
+                // If it's the old test data, wipe it so the user starts fresh
+                if (session.tracklist.length > 0 && session.tracklist[0].title === "Track 1" && session.tracklist[0].artist === "Artist A") {
+                    tracklist = [];
+                } else {
+                    tracklist = session.tracklist;
+                }
+            }
             if (session.mixFileName) mixFileName = session.mixFileName;
             
             if (session.vibeConfig) {
@@ -781,7 +781,13 @@ function parseCueToObjects(text) {
         
         const trackMatch = line.trim().match(/^TRACK\s+(\d+)\s+AUDIO/i);
         if (trackMatch) {
-            currentTrack = { id: crypto.randomUUID(), title: "Unknown Title", artist: globalPerformer, startTime: 0, intensity: "Happy" };
+            currentTrack = { 
+                id: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : Math.random().toString(36).substring(2), 
+                title: "Unknown Title", 
+                artist: globalPerformer, 
+                startTime: 0, 
+                intensity: Object.keys(vibeConfig)[0] || "Happy" 
+            };
             tracks.push(currentTrack);
         }
 
