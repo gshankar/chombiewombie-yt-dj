@@ -42,16 +42,7 @@ function hideLoading() {
     loadingOverlay.style.display = 'none';
 }
 
-function checkViewState() {
-    // Show studio if either audio or tracklist exists
-    if (audioBuffer || tracklist.length > 0) {
-        setupView.style.display = 'none';
-        studioView.style.display = 'flex';
-    } else {
-        setupView.style.display = 'flex';
-        studioView.style.display = 'none';
-    }
-}
+
 
 // --- Wavesurfer Setup ---
 const wavesurfer = WaveSurfer.create({
@@ -72,7 +63,6 @@ document.addEventListener('DOMContentLoaded', () => {
     loadSession();
     lucide.createIcons();
     renderTracklist();
-    checkViewState();
 
     if (TEST_MODE) {
         runTestMode();
@@ -199,9 +189,8 @@ FILE "test.mp3" MP3
         }
     }
     
-    // Always render and check state since waveform is now loaded
+    // Always render since waveform is now loaded
     renderTracklist();
-    checkViewState();
 }
 
 wavesurfer.on('ready', () => {
@@ -215,8 +204,6 @@ window.addEventListener('resize', () => {
 });
 
 // --- Event Listeners ---
-document.getElementById('audio-drop-card').onclick = () => document.getElementById('audio-input').click();
-document.getElementById('cue-drop-card').onclick = () => document.getElementById('cue-input').click();
 document.getElementById('load-audio-btn').onclick = () => document.getElementById('audio-input').click();
 document.getElementById('load-cue-btn').onclick = () => document.getElementById('cue-input').click();
 
@@ -251,7 +238,6 @@ document.getElementById('reset-btn').onclick = () => {
         tracklist = [];
         localStorage.removeItem('cw_session');
         renderTracklist();
-        checkViewState();
     }
 };
 
@@ -369,7 +355,6 @@ async function loadAudio(file) {
         }
         
         console.log("Audio ready for playback and analysis.");
-        checkViewState();
     } catch (err) {
         alert("Error loading audio: " + err.message);
     } finally {
@@ -387,7 +372,6 @@ async function loadCue(file) {
         if (tracks.length > 0) {
             tracklist = tracks;
             renderTracklist();
-            checkViewState();
         }
     } finally {
         hideLoading();
