@@ -9,7 +9,7 @@ let audioBuffer = null;
 let mixFileName = 'my_mix';
 let isProcessing = false;
 let currentPreviewTab = 'yt';
-const TEST_MODE = true; // Set to false to disable auto-loading test files
+const TEST_MODE = false; // Set to false to disable auto-loading test files
 
 let vibeConfig = {
     'Chill': ['CW1 Chill', 'CW Chill 2'],
@@ -81,7 +81,7 @@ document.addEventListener('DOMContentLoaded', () => {
     renderTracklist();
     checkViewState();
 
-    if (TEST_MODE && tracklist.length === 0) {
+    if (TEST_MODE) {
         runTestMode();
     }
 });
@@ -191,13 +191,17 @@ FILE "test.mp3" MP3
     // Load fake peaks and the silent audio
     await wavesurfer.load(url, [peaks], duration);
 
-    const tracks = parseCueToObjects(mockCue);
-    if (tracks.length > 0) {
-        tracklist = tracks;
-        renderTracklist();
-        checkViewState();
-        saveSession();
+    if (tracklist.length === 0) {
+        const tracks = parseCueToObjects(mockCue);
+        if (tracks.length > 0) {
+            tracklist = tracks;
+            saveSession();
+        }
     }
+    
+    // Always render and check state since waveform is now loaded
+    renderTracklist();
+    checkViewState();
 }
 
 wavesurfer.on('ready', () => {
