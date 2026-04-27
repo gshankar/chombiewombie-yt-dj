@@ -292,28 +292,53 @@ input.cell-input:focus {
     background: rgba(255, 77, 77, 0.1);
 }
 
-/* Sidebar / Export Panel */
-.sidebar {
-    width: 300px;
-    background: var(--bg-panel);
-    border-left: 1px solid var(--border);
-    padding: 1rem;
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
+/* Dropdown Styles */
+.dropdown {
+    position: relative;
+    display: inline-block;
 }
 
-.export-group {
+.dropdown-menu {
+    display: none;
+    position: absolute;
+    top: 100%;
+    right: 0;
+    background-color: var(--bg-panel);
+    min-width: 220px;
+    box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.5);
+    z-index: 2000;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    margin-top: 0.25rem;
+}
+
+.dropdown:hover .dropdown-menu, .dropdown-menu:hover {
+    display: block;
+}
+
+.dropdown-item {
+    background: transparent;
+    border: none;
+    color: var(--text-main);
+    padding: 0.75rem 1rem;
+    text-align: left;
+    width: 100%;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.8rem;
     display: flex;
-    flex-direction: column;
+    align-items: center;
     gap: 0.5rem;
 }
 
-.export-group label {
-    font-size: 0.7rem;
-    color: var(--text-dim);
-    text-transform: uppercase;
-    font-weight: 700;
+.dropdown-item:hover {
+    background-color: #404040;
+}
+
+.dropdown-divider {
+    height: 1px;
+    background-color: var(--border);
+    margin: 0.25rem 0;
 }
 
 /* Drop Zone Overlays */
