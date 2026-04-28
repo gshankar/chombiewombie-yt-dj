@@ -218,6 +218,10 @@ window.addEventListener('resize', () => {
 document.getElementById('load-audio-btn').onclick = () => document.getElementById('audio-input').click();
 document.getElementById('load-cue-btn').onclick = () => document.getElementById('cue-input').click();
 
+document.getElementById('copy-yt-btn').onclick = () => copyYouTubeChapters();
+document.getElementById('download-vs2-btn').onclick = () => downloadVS2Playlist();
+document.getElementById('extract-midi-btn').onclick = () => extractMidiRhythm();
+
 document.getElementById('audio-input').onchange = (e) => {
     if (e.target.files[0]) loadAudio(e.target.files[0]);
 };
