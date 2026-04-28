@@ -690,8 +690,10 @@ wavesurfer.on('timeupdate', (currentTime) => {
 
 // --- Exports ---
 function copyYouTubeChapters() {
-    const chapters = tracklist.map(t => `${formatTimePrecision(t.startTime)} ${t.artist} - ${t.title}`).join('\n');
-    navigator.clipboard.writeText(chapters).then(() => alert("Chapters copied to clipboard!"));
+    const content = document.getElementById('preview-content').innerText;
+    navigator.clipboard.writeText(content).then(() => {
+        showToast("Copied YouTube Chapters to clipboard!");
+    });
 }
 
 async function downloadVS2Playlist() {
@@ -705,12 +707,14 @@ async function downloadVS2Playlist() {
         const writable = await handle.createWritable();
         await writable.write(blob);
         await writable.close();
+        showToast("VS2 Playlist exported!");
     } else {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
         a.download = `${mixFileName}_playlist.json`;
         a.click();
+        showToast("VS2 Playlist downloaded!");
     }
 }
 
@@ -779,6 +783,7 @@ async function extractMidiRhythm() {
                 const writable = await handle.createWritable();
                 await writable.write(blob);
                 await writable.close();
+                showToast("MIDI exported successfully!");
             }
         };
     } catch (err) {
@@ -789,6 +794,15 @@ async function extractMidiRhythm() {
 // ==========================================
 // UTILITIES
 // ==========================================
+
+function showToast(message) {
+    const toast = document.getElementById("toast");
+    toast.innerText = message;
+    toast.className = "toast show";
+    setTimeout(() => {
+        toast.className = toast.className.replace("show", "");
+    }, 3000);
+}
 
 // --- Utilities ---
 function formatTimePrecision(seconds) {
