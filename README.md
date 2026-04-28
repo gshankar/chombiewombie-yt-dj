@@ -1,4 +1,4 @@
-# ChombieWombie Tracklist Studio 🎧🎬
+# ChombieWombie Tracklist Studio v0.1 🎧🎬
 
 A premium web-based tool for DJs to transform their recorded mixes into professional YouTube content. This application provides a seamless, persistent workspace to manually refine tracklists, tag audio, and generate metadata and automation patches for video post-production.
 
