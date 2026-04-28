@@ -69,7 +69,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 });
 
-// --- Session Persistence ---
+// ==========================================
+// SESSION PERSISTENCE
+// ==========================================
+
+/**
+ * Saves the current state of the application to LocalStorage.
+ * Persists the tracklist, vibe configuration, and the name of the audio mix.
+ */
 function saveSession() {
     const session = {
         tracklist: tracklist,
@@ -79,6 +86,10 @@ function saveSession() {
     localStorage.setItem('cw_session', JSON.stringify(session));
 }
 
+/**
+ * Loads the application state from LocalStorage on boot.
+ * Includes a backward-compatibility layer for older session data schemas.
+ */
 function loadSession() {
     try {
         const data = localStorage.getItem('cw_session');
@@ -330,7 +341,15 @@ window.addEventListener('keydown', (e) => {
     }
 });
 
-// --- Audio Loading ---
+// ==========================================
+// FILE PARSING & LOADING
+// ==========================================
+
+/**
+ * Loads and decodes an audio file into the WebAudio API and Wavesurfer.
+ * Uses an OfflineAudioContext fallback if Wavesurfer's decoded data isn't exposed.
+ * @param {File} file - The audio file from the input picker.
+ */
 async function loadAudio(file) {
     showLoading("Decoding Audio...");
     try {
@@ -362,7 +381,11 @@ async function loadAudio(file) {
     }
 }
 
-// --- CUE Loading ---
+/**
+ * Reads a Rekordbox CUE sheet, parses the timestamps and metadata,
+ * and populates the global tracklist array.
+ * @param {File} file - The .cue file from the input picker.
+ */
 async function loadCue(file) {
     showLoading("Parsing CUE...");
     try {
@@ -604,6 +627,16 @@ function updatePreview() {
     }
 }
 
+// ==========================================
+// EXPORT ENGINES (VS2, YouTube, MIDI)
+// ==========================================
+
+/**
+ * Generates the JSON playlist payload required for the VS2 Visualizer.
+ * Calculates segment lengths and randomly selects patches from the 
+ * user's assigned Vibe config pools.
+ * @returns {Object} A JSON object matching the VS2 Playlist Schema v1.
+ */
 function generateVS2Data() {
     const entries = [];
     const totalDuration = wavesurfer.getDuration() || 0;
@@ -677,7 +710,12 @@ async function downloadVS2Playlist() {
     }
 }
 
-// --- MIDI Extraction Logic (Kept and Optimized) ---
+/**
+ * Advanced audio processing algorithm. 
+ * Analyzes the raw audio buffer across three distinct frequency bands (Low, Mid, High),
+ * detects rhythmic transients, and generates a multi-track standard MIDI (.mid) file
+ * mapping energy peaks to MIDI note velocities.
+ */
 async function extractMidiRhythm() {
     if (!audioBuffer) {
         alert("Load audio first!");
@@ -744,6 +782,10 @@ async function extractMidiRhythm() {
     }
 }
 
+// ==========================================
+// UTILITIES
+// ==========================================
+
 // --- Utilities ---
 function formatTimePrecision(seconds) {
     const h = Math.floor(seconds / 3600);
@@ -753,6 +795,12 @@ function formatTimePrecision(seconds) {
     return `${pad(h)}:${pad(m)}:${pad(s)}`;
 }
 
+/**
+ * Parses a Rekordbox formatted CUE sheet string into JavaScript objects.
+ * Interprets the custom HH:MM:SS format used by the user's export chain.
+ * @param {string} text - The raw text content of the CUE file.
+ * @returns {Array} An array of track objects containing metadata and start times in seconds.
+ */
 function parseCueToObjects(text) {
     const lines = text.split(/\r?\n/);
     const tracks = [];
