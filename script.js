@@ -767,14 +767,15 @@ async function extractMidiRhythm() {
         const base64 = write.base64();
 
         midiStatus.innerHTML += `<br>> Extraction complete. ${bassOnsets.length + midOnsets.length + trebleOnsets.length} notes found.`;
-        downloadBtn.style.display = 'block';
         hideLoading();
-        downloadBtn.onclick = async () => {
-            const binaryStr = atob(base64);
-            const bytes = new Uint8Array(binaryStr.length);
-            for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
-            const blob = new Blob([bytes], {type: 'audio/midi'});
-            
+        
+        // Auto-download the MIDI file
+        const binaryStr = atob(base64);
+        const bytes = new Uint8Array(binaryStr.length);
+        for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+        const blob = new Blob([bytes], {type: 'audio/midi'});
+        
+        try {
             if ('showSaveFilePicker' in window) {
                 const handle = await window.showSaveFilePicker({
                     suggestedName: `${mixFileName}.mid`,
@@ -784,8 +785,18 @@ async function extractMidiRhythm() {
                 await writable.write(blob);
                 await writable.close();
                 showToast("MIDI exported successfully!");
+            } else {
+                throw new Error("fallback");
             }
-        };
+        } catch (e) {
+            // Fallback for browsers that don't support showSaveFilePicker or if gesture context is lost
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${mixFileName}.mid`;
+            a.click();
+            showToast("MIDI exported successfully!");
+        }
     } catch (err) {
         midiStatus.innerHTML += `<br>> Error: ${err.message}`;
     }
