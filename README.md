@@ -33,17 +33,36 @@ A premium web-based tool for DJs to transform their recorded mixes into professi
 - **MIDI Engine**: [MidiWriter.js](https://github.com/grimmdude/MidiWriterJS)
 - **Icons**: [Lucide](https://lucide.dev/)
 
-## 📖 How to Use
-1. **Load Files**: Use the "Load Audio" and "Load CUE" buttons in the top right header.
-2. **Refine**: Edit track names, reorder them, or use the playhead to accurately tag their timestamps on the waveform.
-3. **Configure Vibes**: Click "Vibes Config" to assign your VS2 presets to the intensity levels in your dropdowns.
-4. **Export**: Open the "Export Suite" dropdown in the header to:
-    - Copy YouTube Chapters directly to your clipboard.
-    - Download the VS2 automation playlist.
-    - Extract and download the 3-channel MIDI rhythm track.
+## 📖 Comprehensive Workflow Guide
+
+1. **Boot the Studio**
+   The studio will automatically remember your previous session. If you want to start fresh, open the **Export Suite** dropdown and click **Reset Studio**.
+
+2. **Load Assets**
+   - **Load Mix Audio**: Use the button in the top right to load your `.wav`, `.mp3`, or `.flac` mix recording. A waveform will immediately generate.
+   - **Load CUE Sheet**: Use the button to load your `.cue` file exported from Rekordbox. The parser translates your mix markers into exact `HH:MM:SS` timestamps and builds your tracklist table.
+
+3. **Refine & Tag Tracks**
+   - **Reorder**: Grab the handle (6 dots) on the left side of any row to drag and drop tracks into the correct order.
+   - **Tag Time**: Need to fix a marker? Click anywhere on the waveform to move the playhead, then click the **Tag Track (Map Pin)** icon on a track row. That track's timestamp will instantly snap to the playhead's current position!
+   - **Set the Vibe**: Use the dropdown on each track row to assign its intensity/mood.
+
+4. **Configure Vibes & VS2 Automations**
+   - Click the **⚙️ Vibes Config** button in the header to open the settings modal.
+   - You aren't forced into hardcoded moods. You can create your own custom Vibe Names (e.g., *Intro*, *Chill*, *Peak*, *Outro*). 
+   - Next to each Vibe Name, type in a comma-separated list of your favorite **VS2 visual patches**. When the mix transitions into that vibe, the VS2 Playlist generator will randomly pick a patch from that specific list!
+
+5. **Preview Your Exports**
+   Scroll to the bottom of the page to find the **Preview Section**. You can click the tabs to see exactly what the YouTube Chapters text block or the raw VS2 JSON will look like before you export them.
+
+6. **The Export Suite**
+   Open the dropdown in the top-right corner to finalize your post-production:
+    - **Copy YT Chapters**: Instantly copies the perfectly formatted text box into your clipboard so you can paste it directly into your YouTube description.
+    - **Download VS2 Playlist**: Downloads the `_playlist.json` file to be loaded directly into your visualizer.
+    - **Extract MIDI Rhythm**: The engine will analyze the actual audio file you loaded, scanning the Bass, Mids, and Treble frequencies. After a few seconds, it will automatically download a `.mid` file to your computer. You can drop this into your DAW or visualizer to drive reactive elements based on the exact energy spikes of your mix! You'll see a green toast notification pop up when it succeeds.
 
 ## 🔒 Privacy
-All processing is done **locally in your browser**. Your music files, metadata, and CUE sheets are never uploaded to a server.
+All processing is done **locally in your browser**. Your music files, metadata, and CUE sheets are never uploaded to a server. Everything remains private on your machine.
 
 ---
-*Created by Antigravity for ChombieWombie.*
+*Made with love by the ChombieWombie Team*
