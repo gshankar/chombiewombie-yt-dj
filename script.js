@@ -783,9 +783,11 @@ function parseCueToObjects(text) {
             if (tMatch) currentTrack.title = tMatch[1];
             if (pMatch) currentTrack.artist = pMatch[1];
             if (iMatch) {
-                const mm = parseInt(iMatch[1]);
-                const ss = parseInt(iMatch[2]);
-                currentTrack.startTime = mm * 60 + ss;
+                const hh = parseInt(iMatch[1], 10);
+                const mm = parseInt(iMatch[2], 10);
+                const ss = parseInt(iMatch[3], 10);
+                // The user requested that the second group be treated as minutes and the third as seconds (HH:MM:SS)
+                currentTrack.startTime = hh * 3600 + mm * 60 + ss;
             }
         }
     }
