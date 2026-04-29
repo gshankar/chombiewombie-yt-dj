@@ -603,7 +603,15 @@ function renderTimelineRuler() {
         const label = document.createElement('div');
         label.className = 'ruler-label';
         label.style.left = `${pos}%`;
-        label.textContent = formatTimePrecision(time);
+        
+        if (interval < 60) {
+            label.textContent = formatTimePrecision(time);
+        } else {
+            const h = Math.floor(time / 3600);
+            const m = Math.floor((time % 3600) / 60);
+            const pad = (n) => String(n).padStart(2, '0');
+            label.textContent = `${pad(h)}:${pad(m)}`;
+        }
 
         ruler.appendChild(tick);
         ruler.appendChild(label);
