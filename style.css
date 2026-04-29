@@ -71,7 +71,9 @@ main {
 /* Waveform Section */
 #waveform-section {
     padding: 1.5rem 1.5rem 0.5rem 1.5rem;
-    position: relative;
+    position: sticky;
+    top: 1rem;
+    z-index: 100;
 }
 
 #timeline-ruler {
@@ -147,9 +149,7 @@ main {
 }
 
 #waveform {
-    background: #252525;
-    border: 1px solid var(--border);
-    border-radius: 2px;
+    /* Styles moved to wrapper for alignment */
 }
 
 .player-controls {
