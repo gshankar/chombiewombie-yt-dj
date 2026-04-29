@@ -252,7 +252,21 @@ document.getElementById('reset-btn').onclick = () => {
     if (confirm("Clear entire tracklist and wipe session?")) {
         tracklist = [];
         localStorage.removeItem('cw_session');
+        
+        // Unload audio & reset studio state
+        wavesurfer.pause();
+        wavesurfer.setTime(0);
+        wavesurfer.empty();
+        audioBuffer = null;
+        mixFileName = 'my_mix';
+        document.getElementById('audio-input').value = '';
+        document.getElementById('cue-input').value = '';
+        document.getElementById('timeline-ruler').innerHTML = '';
+        document.getElementById('current-time').textContent = '00:00:00';
+        updatePlayBtn();
+        
         renderTracklist();
+        showToast("Studio Reset!");
     }
 };
 
