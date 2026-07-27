@@ -12,9 +12,9 @@ let currentPreviewTab = 'yt';
 const TEST_MODE = false; // Set to false to disable auto-loading test files
 
 let vibeConfig = {
-    'Chill': ['CW1 Chill', 'CW Chill 2'],
-    'Happy': ['CW Happy 1', 'CW Happy 2'],
-    'Aggressive': ['CW 3 Intense', 'CW Intense 2']
+    'Chill': ['CW Chill 1', 'CW Chill 2', 'CW Chill 3', 'CW Chill 4', 'CW Chill 5'],
+    'Happy': ['CW Happy 1', 'CW Happy 2', 'CW Happy 3', 'CW Happy 4', 'CW Happy 5'],
+    'Intense': ['CH Intense 1', 'CH Intense 2', 'CH Intense 3', 'CH Intense 4', 'CH Intense 5']
 };
 
 
@@ -63,10 +63,6 @@ document.addEventListener('DOMContentLoaded', () => {
     loadSession();
     lucide.createIcons();
     renderTracklist();
-
-    if (TEST_MODE) {
-        runTestMode();
-    }
 });
 
 // ==========================================
@@ -113,7 +109,23 @@ function loadSession() {
                         session.vibeConfig[key] = pool.map(p => p.patch_name || '[Unknown]');
                     }
                 }
-                vibeConfig = session.vibeConfig;
+                
+                // Check if we need to upgrade old default values
+                const isOldConfig = session.vibeConfig['Aggressive'] || (session.vibeConfig['Chill'] && session.vibeConfig['Chill'].includes('CW1 Chill'));
+                if (isOldConfig) {
+                    console.log("Upgrading old default vibe configuration...");
+                    if (tracklist) {
+                        tracklist.forEach(t => {
+                            if (t.intensity === 'Aggressive') {
+                                t.intensity = 'Intense';
+                            }
+                        });
+                    }
+                    // Retain the tracklist and mix name, but use the new default vibeConfig
+                    saveSession();
+                } else {
+                    vibeConfig = session.vibeConfig;
+                }
             }
         }
     } catch(e) {
@@ -155,10 +167,13 @@ function createSilentWavBlob(durationSecs) {
     return new Blob([buffer], { type: 'audio/wav' });
 }
 
-async function runTestMode() {
-    console.log("TEST MODE ACTIVE: Loading mock CUE data...");
-    
-    const mockCue = `PERFORMER "Test DJ"
+async function loadDemoMix() {
+    showLoading("Loading Demo Mix...");
+    try {
+        console.log("Loading Demo Mix...");
+        mixFileName = "ChombieWombie_Test_Mix";
+        
+        const mockCue = `PERFORMER "Test DJ"
 TITLE "ChombieWombie Test Mix"
 FILE "test.mp3" MP3
   TRACK 01 AUDIO
@@ -168,40 +183,43 @@ FILE "test.mp3" MP3
   TRACK 02 AUDIO
     TITLE "Track 2"
     PERFORMER "Artist B"
-    INDEX 01 05:30:00
+    INDEX 01 01:30:00
   TRACK 03 AUDIO
     TITLE "Track 3"
     PERFORMER "Artist C"
-    INDEX 01 15:45:00
+    INDEX 01 03:45:00
   TRACK 04 AUDIO
     TITLE "Track 4"
     PERFORMER "Artist D"
-    INDEX 01 45:15:00`;
+    INDEX 01 05:15:00`;
 
-    // Generate a synthetic waveform (noise + sine wave) for visual testing
-    const peaks = new Float32Array(1000);
-    for (let i = 0; i < peaks.length; i++) {
-        peaks[i] = (Math.abs(Math.sin(i * 0.05)) * 0.5) + (Math.random() * 0.5);
-    }
-    
-    // Generate a 1-hour silent audio blob so playback and seeking work
-    const duration = 3600;
-    const blob = createSilentWavBlob(duration);
-    const url = URL.createObjectURL(blob);
-    
-    // Load fake peaks and the silent audio
-    await wavesurfer.load(url, [peaks], duration);
+        // Generate a synthetic waveform (noise + sine wave) for visual testing
+        const peaks = new Float32Array(1000);
+        for (let i = 0; i < peaks.length; i++) {
+            peaks[i] = (Math.abs(Math.sin(i * 0.05)) * 0.5) + (Math.random() * 0.5);
+        }
+        
+        // Generate a 1-hour silent audio blob so playback and seeking work
+        const duration = 3600;
+        const blob = createSilentWavBlob(duration);
+        const url = URL.createObjectURL(blob);
+        
+        // Load fake peaks and the silent audio
+        await wavesurfer.load(url, [peaks], duration);
 
-    if (tracklist.length === 0) {
         const tracks = parseCueToObjects(mockCue);
         if (tracks.length > 0) {
             tracklist = tracks;
             saveSession();
         }
+        
+        renderTracklist();
+        showToast("Demo mix loaded!");
+    } catch (err) {
+        alert("Error loading demo mix: " + err.message);
+    } finally {
+        hideLoading();
     }
-    
-    // Always render since waveform is now loaded
-    renderTracklist();
 }
 
 wavesurfer.on('ready', () => {
@@ -215,11 +233,13 @@ window.addEventListener('resize', () => {
 });
 
 // --- Event Listeners ---
+document.getElementById('load-demo-btn').onclick = () => loadDemoMix();
 document.getElementById('load-audio-btn').onclick = () => document.getElementById('audio-input').click();
 document.getElementById('load-cue-btn').onclick = () => document.getElementById('cue-input').click();
 
 document.getElementById('copy-yt-btn').onclick = () => copyYouTubeChapters();
 document.getElementById('download-vs2-btn').onclick = () => downloadVS2Playlist();
+document.getElementById('download-cue-btn').onclick = () => downloadCueSheet();
 document.getElementById('extract-midi-btn').onclick = () => extractMidiRhythm();
 
 document.getElementById('audio-input').onchange = (e) => {
@@ -348,14 +368,26 @@ document.querySelectorAll('.preview-tab').forEach(tab => {
 
 // --- Keyboard Shortcuts ---
 window.addEventListener('keydown', (e) => {
-    if (e.target.tagName === 'INPUT') return;
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
     if (e.code === 'Space') {
         e.preventDefault();
         wavesurfer.playPause();
         updatePlayBtn();
     }
     if (e.code === 'KeyT') {
+        e.preventDefault();
         addTrackAtCurrentTime();
+    }
+    if (e.code === 'ArrowLeft') {
+        e.preventDefault();
+        const cur = wavesurfer.getCurrentTime();
+        wavesurfer.setTime(Math.max(0, cur - 5));
+    }
+    if (e.code === 'ArrowRight') {
+        e.preventDefault();
+        const cur = wavesurfer.getCurrentTime();
+        const dur = wavesurfer.getDuration() || 0;
+        wavesurfer.setTime(Math.min(dur, cur + 5));
     }
 });
 
@@ -577,8 +609,18 @@ function renderTracklist() {
         // Stagger labels to prevent overlapping
         const verticalOffset = (index % 4) * 16; 
         marker.innerHTML = `<span class="marker-label" style="top: ${verticalOffset}px;">${index + 1}</span>`;
+        
+        // Interactive Marker Click
+        marker.onclick = (e) => {
+            e.stopPropagation();
+            jumpToTrack(track.startTime);
+            updateActiveTrackHighlight(track.startTime);
+        };
+        
         markerContainer.appendChild(marker);
     });
+    
+    updateActiveTrackHighlight(wavesurfer.getCurrentTime());
     lucide.createIcons();
     updatePreview();
 }
@@ -642,9 +684,11 @@ function updatePreview() {
     if (currentPreviewTab === 'yt') {
         const chapters = tracklist.map(t => `${formatTimePrecision(t.startTime)} ${t.artist} - ${t.title}`).join('\n');
         previewContent.textContent = chapters || "No tracks added yet.";
-    } else {
+    } else if (currentPreviewTab === 'vs2') {
         const playlist = generateVS2Data();
         previewContent.textContent = JSON.stringify(playlist, null, 4);
+    } else if (currentPreviewTab === 'cue') {
+        previewContent.textContent = generateCueText() || "No tracks added yet.";
     }
     
     // Restore scroll position so the user doesn't lose their place
@@ -687,10 +731,12 @@ function generateVS2Data() {
         }
     });
 
+    let sumDuration = 0;
+    entries.forEach(e => sumDuration += e.duration);
+
     return {
-        _version: 1,
-        schema_version: 1,
-        playlist: entries,
+        duration: sumDuration,
+        entries: entries,
         fade_in_time: 1000,
         fade_out_time: 1000
     };
@@ -706,8 +752,34 @@ function updatePlayBtn() {
     lucide.createIcons();
 }
 
+function updateActiveTrackHighlight(currentTime) {
+    let activeIndex = -1;
+    for (let i = 0; i < tracklist.length; i++) {
+        if (tracklist[i].startTime <= currentTime) {
+            activeIndex = i;
+        } else {
+            break;
+        }
+    }
+
+    const rows = tracklistBody.querySelectorAll('.track-row');
+    rows.forEach((row, idx) => {
+        if (idx === activeIndex) {
+            row.classList.add('active');
+            if (!row.dataset.wasActive) {
+                row.dataset.wasActive = "true";
+                row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        } else {
+            row.classList.remove('active');
+            delete row.dataset.wasActive;
+        }
+    });
+}
+
 wavesurfer.on('timeupdate', (currentTime) => {
     currentTimeDisplay.textContent = formatTimePrecision(currentTime);
+    updateActiveTrackHighlight(currentTime);
 });
 
 // --- Exports ---
@@ -738,6 +810,51 @@ async function downloadVS2Playlist() {
         a.click();
         showToast("VS2 Playlist downloaded!");
     }
+}
+
+
+function generateCueText() {
+    let cue = `PERFORMER "DJ Studio"\nTITLE "${mixFileName}"\nFILE "${mixFileName}.mp3" MP3\n`;
+    tracklist.forEach((track, index) => {
+        const trackNum = String(index + 1).padStart(2, '0');
+        const time = track.startTime;
+        const cumMinutes = Math.floor(time / 60);
+        const remainingSeconds = Math.floor(time % 60);
+        const pad = (n) => String(n).padStart(2, '0');
+        const timeCode = `${pad(cumMinutes)}:${pad(remainingSeconds)}:00`;
+        
+        cue += `  TRACK ${trackNum} AUDIO\n`;
+        cue += `    TITLE "${track.title}"\n`;
+        cue += `    PERFORMER "${track.artist}"\n`;
+        cue += `    INDEX 01 ${timeCode}\n`;
+    });
+    return cue;
+}
+
+async function downloadCueSheet() {
+    const cueText = generateCueText();
+    const blob = new Blob([cueText], { type: 'text/plain' });
+    if ('showSaveFilePicker' in window) {
+        try {
+            const handle = await window.showSaveFilePicker({
+                suggestedName: `${mixFileName}.cue`,
+                types: [{ description: 'CUE Sheet', accept: { 'text/plain': ['.cue'] } }]
+            });
+            const writable = await handle.createWritable();
+            await writable.write(blob);
+            await writable.close();
+            showToast("CUE Sheet exported successfully!");
+            return;
+        } catch (e) {
+            if (e.name !== 'AbortError') console.error(e);
+        }
+    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${mixFileName}.cue`;
+    a.click();
+    showToast("CUE Sheet downloaded!");
 }
 
 /**
